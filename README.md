@@ -141,7 +141,7 @@ uv run jupyter notebook notebooks/week1/week1_setup.ipynb
 
 ```
 zero_to_RAG/
-├── src/                        # Main application code
+├── src/                       # Main application code
 │   ├── main.py                # FastAPI application
 │   ├── routers/               # API endpoints
 │   ├── models/                # Database models (SQLAlchemy)
