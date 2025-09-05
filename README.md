@@ -39,11 +39,7 @@ By the end of this course, you'll have your own AI research assistant and the de
 - **Week 2:** Automated data pipeline fetching and parsing academic papers from arXiv  
 - **Week 3:** Production BM25 keyword search with filtering and relevance scoring
 - **Week 4:** Intelligent chunking + hybrid search combining keywords with semantic understanding
-<<<<<<< HEAD
 - **Week 5:** **Complete RAG pipeline with local LLM, streaming responses, and Gradio interface**
-=======
-- **Week 5:** Full RAG pipeline with LLM integration for answer generation
->>>>>>> c316ef98ee90f476e118a57e2ace1b50f2ad8af1
 - **Week 6:** Evaluation system to measure and improve RAG performance
 
 ---
@@ -87,13 +83,8 @@ curl http://localhost:8000/health
 | **Week 1** | Infrastructure Foundation | [The Infrastructure That Powers RAG Systems](https://jamwithai.substack.com/p/the-infrastructure-that-powers-rag) | [week1.0](https://github.com/jamwithai/arxiv-paper-curator/releases/tag/week1.0) |
 | **Week 2** | Data Ingestion Pipeline | [Building Data Ingestion Pipelines for RAG](https://jamwithai.substack.com/p/bringing-your-rag-system-to-life) | [week2.0](https://github.com/jamwithai/arxiv-paper-curator/releases/tag/week2.0) |
 | **Week 3** | OpenSearch ingestion & BM25 retrieval | [The Search Foundation Every RAG System Needs](https://jamwithai.substack.com/p/the-search-foundation-every-rag-system) | [week3.0](https://github.com/jamwithai/arxiv-paper-curator/releases/tag/week3.0) |
-<<<<<<< HEAD
 | **Week 4** | **Chunking & Hybrid Search** | [The Chunking Strategy That Makes Hybrid Search Work](https://jamwithai.substack.com/p/the-chunking-strategy-that-makes-hybrid-search-work) | [week4.0](https://github.com/jamwithai/arxiv-paper-curator/releases/tag/week4.0) |
 | **Week 5** | **Complete RAG system** | [The Complete RAG System](https://jamwithai.substack.com/p/the-complete-rag-system) | [week5.0](https://github.com/jamwithai/arxiv-paper-curator/releases/tag/week5.0) |
-=======
-| **Week 4** | **Chunking & Hybrid Search** | [Chunking strategies and Hybrid RAG system](https://jamwithai.substack.com/p/chunking-strategies-and-hybrid-rag) | [week4.0](https://github.com/jamwithai/arxiv-paper-curator/releases/tag/week4.0) |
-| **Week 5** | Full RAG Pipeline | _Coming Soon_ | _Coming Soon_ |
->>>>>>> c316ef98ee90f476e118a57e2ace1b50f2ad8af1
 | **Week 6** | Setting up evals | _Coming Soon_ | _Coming Soon_ |
 
 **📥 Clone a specific week's release:**
