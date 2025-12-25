@@ -24,6 +24,8 @@ services:
       - OPENSEARCH__HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
+    volumes:
+      - ./src:/app/src
     networks:
       - rag-network
 
@@ -32,9 +34,10 @@ services:
     container_name: rag-opensearch
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
       - DISABLE_SECURITY_PLUGIN=true
       - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
     ports:
       - "9200:9200"
       - "9600:9600"
