@@ -85,3 +85,12 @@ class OllamaTimeoutError(OllamaException):
 # General application exceptions
 class ConfigurationError(Exception):
     """Exception raised when configuration is invalid."""
+
+class GeminiException(LLMException):
+    """Exception raised for Gemini service errors."""
+
+class geminiConnectionError(GeminiException):
+    """Exception raised when cannot connect to Gemini service."""
+
+class geminiTimeoutError(GeminiException):
+    """Exception raised when Gemini service times out."""
