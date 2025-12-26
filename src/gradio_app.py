@@ -14,97 +14,101 @@ AVAILABLE_CATEGORIES = ["cs.AI", "cs.LG"]
 
 
 async def stream_response(
-    query: str, top_k: int = 3, use_hybrid: bool = True, model: str = DEFAULT_MODEL, categories: str = ""
+    query: str,
+    top_k: int = 3,
+    use_hybrid: bool = True,
+    model: str = DEFAULT_MODEL,
+    categories: str = "",
 ) -> Iterator[str]:
-    """Stream response from the RAG API"""
+    """Stream response from Gemini RAG API (SSE)"""
+
     if not query.strip():
-        yield "Please enter a question."
+        yield "⚠️ Please enter a question."
         return
 
     # Parse categories
-    category_list = [cat.strip() for cat in categories.split(",") if cat.strip()] if categories else None
+    category_list = (
+        [c.strip() for c in categories.split(",") if c.strip()]
+        if categories else None
+    )
 
-    # Prepare request payload
-    payload = {"query": query, "top_k": top_k, "use_hybrid": use_hybrid, "model": model, "categories": category_list}
+    payload = {
+        "query": query,
+        "top_k": top_k,
+        "use_hybrid": use_hybrid,
+        "model": model,
+        "categories": category_list,
+    }
+
+    url = f"{API_BASE_URL}/stream_gemini/stream"
 
     try:
-        url = f"{API_BASE_URL}/stream"
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream("POST", url, json=payload, headers={"Accept": "text/plain"}) as response:
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream(
+                "POST",
+                url,
+                json=payload,
+                headers={"Accept": "text/event-stream"},
+            ) as response:
+
                 if response.status_code != 200:
-                    yield f"Error: API returned status {response.status_code}"
+                    yield f"❌ API Error: {response.status_code}"
                     return
 
-                current_answer = ""
+                answer_buffer = ""
                 sources = []
                 chunks_used = 0
                 search_mode = ""
 
                 async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:]  # Remove "data: " prefix
-                        try:
-                            data = json.loads(data_str)
+                    if not line or not line.startswith("data:"):
+                        continue
 
-                            # Handle error
-                            if "error" in data:
-                                yield f"Error: {data['error']}"
-                                return
+                    try:
+                        data = json.loads(line.removeprefix("data:").strip())
+                    except json.JSONDecodeError:
+                        continue
 
-                            # Handle metadata
-                            if "sources" in data:
-                                sources = data["sources"]
-                                chunks_used = data.get("chunks_used", 0)
-                                search_mode = data.get("search_mode", "unknown")
-                                continue
+                    # ❌ Backend error
+                    if "error" in data:
+                        yield f"❌ Error: {data['error']}"
+                        return
 
-                            # Handle streaming chunks
-                            if "chunk" in data:
-                                current_answer += data["chunk"]
-                                # Format response with sources if we have them
-                                formatted_response = current_answer
-                                if sources or chunks_used:
-                                    formatted_response += f"\n\n**Search Info:**\n"
-                                    formatted_response += f"- Mode: {search_mode}\n"
-                                    formatted_response += f"- Chunks used: {chunks_used}\n"
-                                    if sources:
-                                        formatted_response += f"- Sources: {len(sources)} papers\n"
-                                        for i, source in enumerate(sources[:3], 1):  # Show first 3 sources
-                                            formatted_response += f"  {i}. [{source.split('/')[-1]}]({source})\n"
-                                        if len(sources) > 3:
-                                            formatted_response += f"  ... and {len(sources) - 3} more\n"
+                    # 🔹 Streaming token
+                    if "chunk" in data:
+                        answer_buffer += data["chunk"]
+                        yield answer_buffer
+                        continue
 
-                                yield formatted_response
+                    # 🔹 Final metadata
+                    if data.get("done") is True:
+                        answer_buffer = data.get("answer", answer_buffer)
+                        sources = data.get("sources", [])
+                        chunks_used = data.get("chunks_used", 0)
+                        search_mode = data.get("search_mode", "rag")
 
-                            # Handle completion
-                            if data.get("done", False):
-                                final_answer = data.get("answer", current_answer)
-                                if final_answer != current_answer:
-                                    current_answer = final_answer
+                        final_output = answer_buffer
 
-                                # Final formatted response
-                                formatted_response = current_answer
-                                if sources or chunks_used:
-                                    formatted_response += f"\n\n**Search Info:**\n"
-                                    formatted_response += f"- Mode: {search_mode}\n"
-                                    formatted_response += f"- Chunks used: {chunks_used}\n"
-                                    if sources:
-                                        formatted_response += f"- Sources: {len(sources)} papers\n"
-                                        for i, source in enumerate(sources[:3], 1):
-                                            formatted_response += f"  {i}. [{source.split('/')[-1]}]({source})\n"
-                                        if len(sources) > 3:
-                                            formatted_response += f"  ... and {len(sources) - 3} more\n"
+                        if sources or chunks_used:
+                            final_output += "\n\n---\n**Search Info:**\n"
+                            final_output += f"- Mode: {search_mode}\n"
+                            final_output += f"- Chunks used: {chunks_used}\n"
 
-                                yield formatted_response
-                                break
+                            if sources:
+                                final_output += f"- Sources: {len(sources)} papers\n"
+                                for i, src in enumerate(sources[:3], 1):
+                                    name = src.split("/")[-1]
+                                    final_output += f"  {i}. [{name}]({src})\n"
+                                if len(sources) > 3:
+                                    final_output += f"  ... and {len(sources) - 3} more\n"
 
-                        except json.JSONDecodeError:
-                            continue  # Skip malformed JSON lines
+                        yield final_output
+                        return
 
     except httpx.RequestError as e:
-        yield f"Connection error: {str(e)}\nMake sure the API server is running at {API_BASE_URL}"
+        yield f"❌ Connection error: {e}"
     except Exception as e:
-        yield f"Unexpected error: {str(e)}"
+        yield f"❌ Unexpected error: {e}"
 
 
 def create_gradio_interface():
