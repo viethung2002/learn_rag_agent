@@ -1,7 +1,11 @@
-*Tóm tắt nội dung:*
+# The Mother of AI Project
+## Phase 1 RAG Systems: arXiv Paper Curator
 
-* *Vấn đề:*
-  Docker trên Windows chạy bên trong *WSL2 (Linux VM)* nên dữ liệu Docker được lưu trong file *VHDX* (ổ đĩa ảo). File này *chỉ phình to theo thời gian* (có thể lên đến ~256GB) nhưng *không tự thu nhỏ lại*, dù bạn đã xóa container/image.
+<div align="center">
+  <h3>A Learner-Focused Journey into Production RAG Systems</h3>
+  <p>Learn to build modern AI systems from the ground up through hands-on implementation</p>
+  <p>Master the most in-demand AI engineering skills: <strong>RAG (Retrieval-Augmented Generation)</strong></p>
+</div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python Version">
@@ -11,31 +15,25 @@
   <img src="https://img.shields.io/badge/Status-Week%206%20Production%20Ready-brightgreen.svg" alt="Status">
 </p>
 
-  * Docker:
+</br>
 
-    
-    %LOCALAPPDATA%\Docker\wsl\data\ext4.vhdx
-    
-  * WSL (Ubuntu/Debian…):
+<p align="center">
+  <a href="#-about-this-course">
+    <img src="static/mother_of_ai_project_rag_architecture.gif" alt="RAG Architecture" width="700">
+  </a>
+</p>
 
-    
-    %LOCALAPPDATA%\Packages\<LinuxDistro>\LocalState\ext4.vhdx
-    
+## 📖 About This Course
 
-* *Dọn rác Docker (bên trong Linux):*
+This is a **learner-focused project** where you'll build a complete research assistant system that automatically fetches academic papers, understands their content, and answers your research questions using advanced RAG techniques.
 
-  * Kiểm tra dung lượng:
+**The arXiv Paper Curator** will teach you to build a **production-grade RAG system using industry best practices**. Unlike tutorials that jump straight to vector search, we follow the **professional path**: master keyword search foundations first, then enhance with vectors for hybrid retrieval.
 
-    
-    docker system df
-    
-  * Xóa toàn bộ rác (container, image, network, build cache):
+> **🎯 The Professional Difference:** We build RAG systems the way successful companies do - solid search foundations enhanced with AI, not AI-first approaches that ignore search fundamentals.
 
-    
-    docker system prune
-    
+By the end of this course, you'll have your own AI research assistant and the deep technical skills to build production RAG systems for any domain.
 
-    (hoặc từng phần: docker container/image/network/volume prune)
+### **🎓 What You'll Build**
 
 - **Week 1:** Complete infrastructure with Docker, FastAPI, PostgreSQL, OpenSearch, and Airflow
 - **Week 2:** Automated data pipeline fetching and parsing academic papers from arXiv  
@@ -44,40 +42,38 @@
 - **Week 5:** **Complete RAG pipeline with local LLM, streaming responses, and Gradio interface**
 - **Week 6:** **Production monitoring with Langfuse tracing and Redis caching for optimized performance**
 
-* *Cách thu nhỏ file VHDX (giải phóng dung lượng thật trên Windows):*
+---
 
-  1. Kiểm tra WSL dùng version 2:
+## 🚀 Quick Start
 
-     
-     wsl --list --verbose
-     
-  2. Tắt toàn bộ WSL:
+### **📋 Prerequisites**
+- **Docker Desktop** (with Docker Compose)  
+- **Python 3.12+**
+- **UV Package Manager** ([Install Guide](https://docs.astral.sh/uv/getting-started/installation/))
+- **8GB+ RAM** and **20GB+ free disk space**
 
-     
-     wsl --shutdown
-     
-  3. Mở *DiskPart* (Run as Administrator):
+### **⚡ Get Started**
 
-     
-     diskpart
-     
-  4. Chọn file VHDX (ví dụ Docker):
+```bash
+# 1. Clone and setup
+git clone <repository-url>
+cd arxiv-paper-curator
 
-     
-     select vdisk file="C:\Users\LENOVO\AppData\Local\Docker\wsl\disk\docker_data.vhdx"
-     
-  5. Thu gọn ổ đĩa ảo:
+# 2. Configure environment (IMPORTANT!)
+cp .env.example .env
+# The .env file contains all necessary configuration for OpenSearch, 
+# arXiv API, and service connections. Defaults work out of the box.
+# For Week 4: Add JINA_API_KEY=your_key_here for hybrid search
 
-     
-     compact vdisk
-     
-  6. Lặp lại cho file VHDX của WSL nếu cần.
+# 3. Install dependencies
+uv sync
 
-* *Kết quả:*
-  File VHDX được *thu nhỏ về đúng dung lượng đang dùng* (ví dụ từ 88GB xuống ~49GB), giải phóng hàng chục GB ổ cứng.
+# 4. Start all services
+docker compose up --build -d
 
-* *Lưu ý:*
-  Nên *backup file VHDX* nếu có dữ liệu quan trọng trước khi làm.
+# 5. Verify everything works
+curl http://localhost:8000/health
+```
 
 ### **📚 Weekly Learning Path**
 
