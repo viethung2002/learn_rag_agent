@@ -106,7 +106,7 @@ async def ask_nvidia_api(
             query=request.query,
             chunks=chunks,
             model=request.model or None,  # nếu model=None thì dùng default trong client
-            use_structured_output=True,
+            use_structured_output=False,
         )
 
     except Exception as e:
@@ -116,7 +116,8 @@ async def ask_nvidia_api(
     # Trích xuất và đảm bảo các field đúng định dạng cho AskResponse
     return AskResponse(
         query=request.query,
-        answer=rag_result.get("answer", "Không thể tạo câu trả lời."),  # phải là str
+        # answer=rag_result.get("answer", "Không thể tạo câu trả lời."),  # phải là str
+        answer=rag_result["answer"],  # phải là str
         sources=rag_result.get("sources", sources),  # ưu tiên từ nvidia, fallback về sources từ search
         chunks_used=len(chunks),
         search_mode=search_mode,
