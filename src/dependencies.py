@@ -9,6 +9,7 @@ from src.services.arxiv.client import ArxivClient
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.ollama.client import OllamaClient
 from src.services.gemini.client import GeminiClient
+from src.services.nvidia.client import NvidiaClient
 from src.services.opensearch.client import OpenSearchClient
 from src.services.pdf_parser.parser import PDFParserService
 
@@ -59,6 +60,13 @@ def get_ollama_client(request: Request) -> OllamaClient:
     """Get Ollama client from the request state."""
     return request.app.state.ollama_client
 
+def get_gemini_client(request: Request) -> GeminiClient:
+    """Get Gemini client from the request state."""
+    return request.app.state.gemini_client
+
+def get_nvidia_client(request: Request) -> NvidiaClient:
+    """Get Nvidia client from the request state."""
+    return request.app.state.nvidia_client
 
 # Dependency annotations
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -70,4 +78,5 @@ PDFParserDep = Annotated[PDFParserService, Depends(get_pdf_parser)]
 EmbeddingsDep = Annotated[JinaEmbeddingsClient, Depends(get_embeddings_service)]
 OllamaDep = Annotated[OllamaClient, Depends(get_ollama_client)]
 GeminiDep = Annotated[GeminiClient, Depends(get_gemini_client)]  # Assuming Gemini client uses the same dependency pattern
+NvidiaDep = Annotated[NvidiaClient, Depends(get_nvidia_client)]
 

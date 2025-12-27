@@ -89,8 +89,16 @@ class ConfigurationError(Exception):
 class GeminiException(LLMException):
     """Exception raised for Gemini service errors."""
 
-class geminiConnectionError(GeminiException):
+class GeminiConnectionError(GeminiException):
     """Exception raised when cannot connect to Gemini service."""
 
-class geminiTimeoutError(GeminiException):
+class GeminiTimeoutError(GeminiException):
     """Exception raised when Gemini service times out."""
+
+
+class NvidiaException(LLMException):
+    """Exception raised for NVIDIA service errors."""
+class NvidiaConnectionError(NvidiaException):
+    """Exception raised when cannot connect to NVIDIA service."""
+class NvidiaTimeoutError(NvidiaException):
+    """Exception raised when NVIDIA service times out."""
