@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from src.config import Settings
 from src.db.interfaces.base import BaseDatabase
 from src.services.arxiv.client import ArxivClient
+from src.services.cache.client import CacheClient
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
+from src.services.langfuse.client import LangfuseTracer
 from src.services.ollama.client import OllamaClient
 from src.services.gemini.client import GeminiClient
 from src.services.nvidia.client import NvidiaClient
@@ -67,6 +69,16 @@ def get_gemini_client(request: Request) -> GeminiClient:
 def get_nvidia_client(request: Request) -> NvidiaClient:
     """Get Nvidia client from the request state."""
     return request.app.state.nvidia_client
+
+def get_langfuse_tracer(request: Request) -> LangfuseTracer:
+    """Get Langfuse tracer from the request state."""
+    return request.app.state.langfuse_tracer
+
+
+def get_cache_client(request: Request) -> CacheClient | None:
+    """Get cache client from the request state."""
+    return getattr(request.app.state, "cache_client", None)
+
 
 # Dependency annotations
 SettingsDep = Annotated[Settings, Depends(get_settings)]

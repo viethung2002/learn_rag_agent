@@ -12,7 +12,9 @@ from src.routers.ask_gemini import ask_gemini,stream_gemini
 from src.routers.ask_nvidia import ask_nvidia,stream_nvidia
 
 from src.services.arxiv.factory import make_arxiv_client
+from src.services.cache.factory import make_cache_client
 from src.services.embeddings.factory import make_embeddings_service
+from src.services.langfuse.factory import make_langfuse_tracer
 from src.services.ollama.factory import make_ollama_client
 from src.services.gemini.factory import make_gemini_client
 from src.services.nvidia.factory import make_nvidia_client
