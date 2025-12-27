@@ -120,6 +120,15 @@ class Settings(BaseConfigSettings):
     ollama_model: str = "llama3.2:1b"
     ollama_timeout: int = 300
 
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_api_key: str = ""
+    gemini_timeout: int = 300
+
+    nvidia_model: str = "deepseek-ai/deepseek-v3.2"
+    nvidia_api_key: str = ""
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_timeout: int = 300
+    
     # Jina AI embeddings configuration
     jina_api_key: str = ""
 
