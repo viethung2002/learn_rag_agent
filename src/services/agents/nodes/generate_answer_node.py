@@ -80,9 +80,14 @@ async def ainvoke_generate_answer_step(
         )
 
         # Get LLM from runtime context
-        llm = runtime.context.ollama_client.get_langchain_model(
+        # llm = runtime.context.ollama_client.get_langchain_model(
+        #     model=runtime.context.model_name,
+        #     temperature=runtime.context.temperature,
+        # )
+        llm = runtime.context.nvidia_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=runtime.context.temperature,
+            use_structured_output=True,
         )
 
         # Invoke LLM for answer generation

@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Optional
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
-from src.services.ollama.client import OllamaClient
+# from src.services.ollama.client import OllamaClient
+from src.services.nvidia.client import NvidiaClient
 from src.services.opensearch.client import OpenSearchClient
 
 
@@ -27,7 +28,8 @@ class Context:
     :param guardrail_threshold: Threshold for guardrail validation (0-100)
     """
 
-    ollama_client: OllamaClient
+    # ollama_client: OllamaClient
+    nvidia_client: NvidiaClient
     opensearch_client: OpenSearchClient
     embeddings_client: JinaEmbeddingsClient
     langfuse_tracer: Optional[LangfuseTracer]

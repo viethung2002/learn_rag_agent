@@ -114,7 +114,8 @@ TelegramDep = Annotated[Optional[TelegramBot], Depends(get_telegram_service)]
 
 def get_agentic_rag_service(
     opensearch: OpenSearchDep,
-    ollama: OllamaDep,
+    # ollama: OllamaDep,
+    nvidia: NvidiaDep,
     embeddings: EmbeddingsDep,
     langfuse: LangfuseDep,
     settings: Annotated[Settings, Depends(get_settings)],
@@ -122,10 +123,12 @@ def get_agentic_rag_service(
     """Get agentic RAG service."""
     return make_agentic_rag_service(
         opensearch_client=opensearch,
-        ollama_client=ollama,
+        # ollama_client=ollama,
+        nvidia_client=nvidia,
         embeddings_client=embeddings,
         langfuse_tracer=langfuse,
-        model=settings.ollama_model,
+        # model=settings.ollama_model,
+        # model=settings.nvidia_model,
     )
 
 

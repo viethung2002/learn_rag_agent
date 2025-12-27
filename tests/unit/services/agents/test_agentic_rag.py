@@ -13,7 +13,7 @@ from src.services.agents.models import GuardrailScoring
 def test_service(mock_opensearch_client, mock_ollama_client, mock_jina_embeddings_client):
     """Create AgenticRAGService with mocked dependencies."""
     config = GraphConfig(
-        model="llama3.2:1b",
+        model="deepseek-ai/deepseek-v3.2",
         temperature=0.0,
         top_k=3,
         use_hybrid=True,
@@ -42,7 +42,7 @@ class TestAgenticRAGServiceInitialization:
 
     def test_graph_config_values(self, test_service):
         """Test graph configuration values."""
-        assert test_service.graph_config.model == "llama3.2:1b"
+        assert test_service.graph_config.model == "deepseek-ai/deepseek-v3.2"
         assert test_service.graph_config.top_k == 3
         assert test_service.graph_config.use_hybrid is True
         assert test_service.graph_config.max_retrieval_attempts == 2
