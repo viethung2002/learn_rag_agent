@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Literal
+from typing import List, Literal, Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -146,6 +146,19 @@ class RedisSettings(BaseConfigSettings):
     ttl_hours: int = 6  # Cache TTL in hours
 
 
+class TelegramSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="TELEGRAM__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    bot_token: str = ""
+    enabled: bool = False
+
+
 class Settings(BaseConfigSettings):
     app_version: str = "0.1.0"
     debug: bool = True
@@ -179,6 +192,7 @@ class Settings(BaseConfigSettings):
     opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
+    telegram: TelegramSettings = Field(default_factory=TelegramSettings)
 
     @field_validator("postgres_database_url")
     @classmethod

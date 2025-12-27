@@ -16,14 +16,15 @@ class RAGTracer:
     @contextmanager
     def trace_request(self, user_id: str, query: str):
         """Main request trace context manager."""
-        with self.tracer.trace_rag_request(
-            query=query, user_id=user_id, session_id=f"session_{user_id}", metadata={"simplified_tracing": True}
-        ) as trace:
-            try:
+        trace = None
+        try:
+            with self.tracer.trace_rag_request(
+                query=query, user_id=user_id, session_id=f"session_{user_id}", metadata={"simplified_tracing": True}
+            ) as trace:
                 yield trace
-            finally:
-                if trace:
-                    self.tracer.flush()
+        finally:
+            if trace:
+                self.tracer.flush()
 
     @contextmanager
     def trace_embedding(self, trace, query: str):

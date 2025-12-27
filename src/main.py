@@ -6,7 +6,7 @@ import uvicorn
 from fastapi import FastAPI
 from src.config import get_settings
 from src.db.factory import make_database
-from src.routers import hybrid_search, ping
+from src.routers import agentic_ask, hybrid_search, ping
 from src.routers.ask import ask_router, stream_router
 from src.routers.ask_gemini import ask_gemini,stream_gemini
 from src.routers.ask_nvidia import ask_nvidia,stream_nvidia
@@ -20,6 +20,7 @@ from src.services.gemini.factory import make_gemini_client
 from src.services.nvidia.factory import make_nvidia_client
 from src.services.opensearch.factory import make_opensearch_client
 from src.services.pdf_parser.factory import make_pdf_parser_service
+from src.services.telegram.factory import make_telegram_service
 
 
 # Setup logging
@@ -79,10 +80,33 @@ async def lifespan(app: FastAPI):
     app.state.cache_client = make_cache_client(settings)
     logger.info("Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, Ollama, Langfuse, Cache")
 
+    # Initialize Telegram bot (Week 7)
+    telegram_service = make_telegram_service(
+        opensearch_client=app.state.opensearch_client,
+        embeddings_client=app.state.embeddings_service,
+        ollama_client=app.state.ollama_client,
+        cache_client=app.state.cache_client,
+        langfuse_tracer=app.state.langfuse_tracer,
+    )
+
+    if telegram_service:
+        app.state.telegram_service = telegram_service
+        try:
+            await telegram_service.start()
+            logger.info("Telegram bot started successfully")
+        except Exception as e:
+            logger.error(f"Failed to start Telegram bot: {e}")
+    else:
+        logger.info("Telegram bot not configured - skipping initialization")
+
     logger.info("API ready")
     yield
 
     # Cleanup
+    if hasattr(app.state, "telegram_service") and app.state.telegram_service:
+        await app.state.telegram_service.stop()
+        logger.info("Telegram bot stopped")
+
     database.teardown()
     logger.info("API shutdown complete")
 
@@ -104,6 +128,7 @@ app.include_router(stream_gemini, prefix="/api/v1")  # Streaming RAG
 app.include_router(ask_nvidia, prefix="/api/v1")  # RAG question answering with Nvidia LLM
 app.include_router(stream_nvidia, prefix="/api/v1")  # Streaming RAG
 
+app.include_router(agentic_ask.router)  # Agentic RAG with intelligent retrieval
 
 
 if __name__ == "__main__":
