@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from src.config import Settings
 from src.db.interfaces.base import BaseDatabase
 from src.services.arxiv.client import ArxivClient
+from src.services.cache.client import CacheClient
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
+from src.services.langfuse.client import LangfuseTracer
 from src.services.ollama.client import OllamaClient
 from src.services.gemini.client import GeminiClient
 from src.services.nvidia.client import NvidiaClient
@@ -68,6 +70,16 @@ def get_nvidia_client(request: Request) -> NvidiaClient:
     """Get Nvidia client from the request state."""
     return request.app.state.nvidia_client
 
+def get_langfuse_tracer(request: Request) -> LangfuseTracer:
+    """Get Langfuse tracer from the request state."""
+    return request.app.state.langfuse_tracer
+
+
+def get_cache_client(request: Request) -> CacheClient | None:
+    """Get cache client from the request state."""
+    return getattr(request.app.state, "cache_client", None)
+
+
 # Dependency annotations
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DatabaseDep = Annotated[BaseDatabase, Depends(get_database)]
@@ -79,4 +91,5 @@ EmbeddingsDep = Annotated[JinaEmbeddingsClient, Depends(get_embeddings_service)]
 OllamaDep = Annotated[OllamaClient, Depends(get_ollama_client)]
 GeminiDep = Annotated[GeminiClient, Depends(get_gemini_client)]  # Assuming Gemini client uses the same dependency pattern
 NvidiaDep = Annotated[NvidiaClient, Depends(get_nvidia_client)]
-
+LangfuseDep = Annotated[LangfuseTracer, Depends(get_langfuse_tracer)]
+CacheDep = Annotated[CacheClient | None, Depends(get_cache_client)]
