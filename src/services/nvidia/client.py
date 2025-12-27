@@ -209,59 +209,133 @@ class NvidiaClient:
         model: str = None,
         use_structured_output: bool = True,
     ) -> Dict[str, Any]:
+    #     """
+    #     Generate RAG answer với structured output nếu cần.
+    #     """
+    #     try:
+    #         model_name = model or self.default_model
+
+    #         if use_structured_output:
+    #             prompt_data = self.prompt_builder.create_structured_prompt(query, chunks)
+    #             response = await self.generate(
+    #                 model=model_name,
+    #                 prompt=prompt_data["prompt"],
+    #                 format=prompt_data["format"],  # truyền schema JSON
+    #             )
+    #         else:
+    #             prompt = self.prompt_builder.create_rag_prompt(query, chunks)
+    #             response = await self.generate(
+    #                 model=model_name,
+    #                 prompt=prompt,
+    #             )
+
+    #         # Xử lý response
+    #         if response.get("parsed"):
+    #             parsed_response = response["parsed"]
+    #         elif response.get("text"):
+    #             raw_text = response["text"]
+    #             parsed_response = self.response_parser.parse_structured_response(raw_text)
+    #         else:
+    #             raise NvidiaException("No valid response from Nvidia")
+
+    #         # Bổ sung sources và citations nếu thiếu (giữ logic cũ)
+    #         if not parsed_response.get("sources"):
+    #             seen_urls = set()
+    #             sources = []
+    #             for chunk in chunks:
+    #                 arxiv_id = chunk.get("arxiv_id")
+    #                 if arxiv_id:
+    #                     arxiv_id_clean = arxiv_id.split("v")[0]
+    #                     pdf_url = f"https://arxiv.org/pdf/{arxiv_id_clean}.pdf"
+    #                     if pdf_url not in seen_urls:
+    #                         sources.append(pdf_url)
+    #                         seen_urls.add(pdf_url)
+    #             parsed_response["sources"] = sources
+
+    #         if not parsed_response.get("citations"):
+    #             citations = list({chunk.get("arxiv_id") for chunk in chunks if chunk.get("arxiv_id")})
+    #             parsed_response["citations"] = citations[:5]
+
+    #         return parsed_response
+
+    #     except Exception as e:
+    #         logger.error(f"Error generating RAG answer: {e}")
+    #         raise NvidiaException(f"Failed to generate RAG answer: {e}")
+
         """
-        Generate RAG answer với structured output nếu cần.
+        Generate a RAG answer using retrieved chunks.
+
+        Args:
+            query: User's question
+            chunks: Retrieved document chunks with metadata
+            model: Model to use for generation
+            use_structured_output: Whether to use Ollama's structured output feature
+
+        Returns:
+            Dictionary with answer, sources, confidence, and citations
         """
         try:
-            model_name = model or self.default_model
-
             if use_structured_output:
+                # Use structured output with Pydantic model
                 prompt_data = self.prompt_builder.create_structured_prompt(query, chunks)
+
+                # Generate with structured format
                 response = await self.generate(
-                    model=model_name,
+                    model=model,
                     prompt=prompt_data["prompt"],
-                    format=prompt_data["format"],  # truyền schema JSON
+                    temperature=0.7,
+                    top_p=0.9,
+                    format=prompt_data["format"],
                 )
             else:
+                # Fallback to plain text mode
                 prompt = self.prompt_builder.create_rag_prompt(query, chunks)
+
+                # Generate without format restrictions
                 response = await self.generate(
-                    model=model_name,
+                    model=model,
                     prompt=prompt,
+                    temperature=0.7,
+                    top_p=0.9,
                 )
 
-            # Xử lý response
-            if response.get("parsed"):
-                parsed_response = response["parsed"]
-            elif response.get("text"):
-                raw_text = response["text"]
-                parsed_response = self.response_parser.parse_structured_response(raw_text)
+            if response and "text" in response:
+                answer_text = response["text"]
+                logger.debug(f"Raw LLM response: {answer_text[:500]}")
+
+                if use_structured_output:
+                    # Try to parse structured response if enabled
+                    parsed_response = self.response_parser.parse_structured_response(answer_text)
+                    logger.debug(f"Parsed response: {parsed_response}")
+                    return parsed_response
+                else:
+                    # For plain text response, build simple response structure
+                    sources = []
+                    logger.debug(f"Building sources from chunks for non-structured output{chunks}")
+                    seen_urls = set()
+                    for chunk in chunks:
+                        arxiv_id = chunk.get("arxiv_id")
+                        if arxiv_id:
+                            arxiv_id_clean = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
+                            pdf_url = f"https://arxiv.org/pdf/{arxiv_id_clean}.pdf"
+                            if pdf_url not in seen_urls:
+                                sources.append(pdf_url)
+                                seen_urls.add(pdf_url)
+
+                    citations = list(set(chunk.get("arxiv_id") for chunk in chunks if chunk.get("arxiv_id")))
+
+                    return {
+                        "answer": answer_text,
+                        "sources": sources,
+                        "confidence": "medium",
+                        "citations": citations[:5],
+                    }
             else:
-                raise NvidiaException("No valid response from Nvidia")
-
-            # Bổ sung sources và citations nếu thiếu (giữ logic cũ)
-            if not parsed_response.get("sources"):
-                seen_urls = set()
-                sources = []
-                for chunk in chunks:
-                    arxiv_id = chunk.get("arxiv_id")
-                    if arxiv_id:
-                        arxiv_id_clean = arxiv_id.split("v")[0]
-                        pdf_url = f"https://arxiv.org/pdf/{arxiv_id_clean}.pdf"
-                        if pdf_url not in seen_urls:
-                            sources.append(pdf_url)
-                            seen_urls.add(pdf_url)
-                parsed_response["sources"] = sources
-
-            if not parsed_response.get("citations"):
-                citations = list({chunk.get("arxiv_id") for chunk in chunks if chunk.get("arxiv_id")})
-                parsed_response["citations"] = citations[:5]
-
-            return parsed_response
+                raise NvidiaException("No response generated from Nvidia")
 
         except Exception as e:
             logger.error(f"Error generating RAG answer: {e}")
             raise NvidiaException(f"Failed to generate RAG answer: {e}")
-
 
     async def generate_rag_answer_stream(
         self,
