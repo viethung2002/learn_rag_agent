@@ -8,19 +8,13 @@ from src.config import get_settings
 from src.db.factory import make_database
 from src.routers import hybrid_search, ping
 from src.routers.ask import ask_router, stream_router
-from src.routers.ask_gemini import ask_gemini,stream_gemini
-from src.routers.ask_nvidia import ask_nvidia,stream_nvidia
-
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
 from src.services.embeddings.factory import make_embeddings_service
 from src.services.langfuse.factory import make_langfuse_tracer
 from src.services.ollama.factory import make_ollama_client
-from src.services.gemini.factory import make_gemini_client
-from src.services.nvidia.factory import make_nvidia_client
 from src.services.opensearch.factory import make_opensearch_client
 from src.services.pdf_parser.factory import make_pdf_parser_service
-
 
 # Setup logging
 logging.basicConfig(
@@ -73,8 +67,6 @@ async def lifespan(app: FastAPI):
     app.state.pdf_parser = make_pdf_parser_service()
     app.state.embeddings_service = make_embeddings_service()
     app.state.ollama_client = make_ollama_client()
-    app.state.gemini_client = make_gemini_client()
-    app.state.nvidia_client = make_nvidia_client()
     app.state.langfuse_tracer = make_langfuse_tracer()
     app.state.cache_client = make_cache_client(settings)
     logger.info("Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, Ollama, Langfuse, Cache")
@@ -99,11 +91,6 @@ app.include_router(ping.router, prefix="/api/v1")  # Health check endpoint
 app.include_router(hybrid_search.router, prefix="/api/v1")  # Search chunks with BM25/hybrid
 app.include_router(ask_router, prefix="/api/v1")  # RAG question answering with LLM
 app.include_router(stream_router, prefix="/api/v1")  # Streaming RAG responses
-app.include_router(ask_gemini, prefix="/api/v1")  # RAG question answering with Gemini LLM
-app.include_router(stream_gemini, prefix="/api/v1")  # Streaming RAG
-app.include_router(ask_nvidia, prefix="/api/v1")  # RAG question answering with Nvidia LLM
-app.include_router(stream_nvidia, prefix="/api/v1")  # Streaming RAG
-
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ dependencies = [
     "google-genai>=1.56.0",
     "langchain-nvidia-ai-endpoints>=1.0.0",
     "langchain-openai>=1.1.6",
+    "langfuse>=2.0.0,<3.0.0",
+    "redis>=6.4.0",
 ]
 readme = "README.md"
 

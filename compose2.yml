@@ -20,8 +20,6 @@ services:
       start_period: 40s
     env_file:
       - .env
-    volumes:
-      - ./src:/app/src
     environment:
       # Container-specific overrides
       - OPENSEARCH_HOST=http://opensearch:9200
@@ -32,7 +30,6 @@ services:
       - REDIS__HOST=redis
     networks:
       - rag-network
-
 
   redis:
     image: redis:7-alpine
@@ -232,8 +229,6 @@ services:
       - POSTGRES_USER=langfuse
       - POSTGRES_PASSWORD=langfuse
       - POSTGRES_HOST_AUTH_METHOD=password
-    ports:
-      - "5433:5432"
     volumes:
       - langfuse_postgres_data:/var/lib/postgresql/data
     healthcheck:
