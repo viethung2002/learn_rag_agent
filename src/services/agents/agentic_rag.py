@@ -10,6 +10,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 from src.services.ollama.client import OllamaClient
+from src.services.nvidia.client import NvidiaClient
 from src.services.opensearch.client import OpenSearchClient
 
 from .config import GraphConfig
@@ -42,7 +43,8 @@ class AgenticRAGService:
     def __init__(
         self,
         opensearch_client: OpenSearchClient,
-        ollama_client: OllamaClient,
+        # ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
         embeddings_client: JinaEmbeddingsClient,
         langfuse_tracer: Optional[LangfuseTracer] = None,
         graph_config: Optional[GraphConfig] = None,
@@ -56,7 +58,9 @@ class AgenticRAGService:
         :param graph_config: Configuration for graph execution
         """
         self.opensearch = opensearch_client
-        self.ollama = ollama_client
+        # self.ollama = ollama_client
+        self.nvidia = nvidia_client
+
         self.embeddings = embeddings_client
         self.langfuse_tracer = langfuse_tracer
         self.graph_config = graph_config or GraphConfig()
@@ -250,7 +254,8 @@ class AgenticRAGService:
 
             # Runtime context (dependencies)
             runtime_context = Context(
-                ollama_client=self.ollama,
+                # ollama_client=self.ollama,
+                nvidia_client=self.nvidia,
                 opensearch_client=self.opensearch,
                 embeddings_client=self.embeddings,
                 langfuse_tracer=self.langfuse_tracer,

@@ -24,7 +24,8 @@ class GraphConfig(BaseModel):
 
     max_retrieval_attempts: int = 2
     guardrail_threshold: int = 60
-    model: str = "llama3.2:1b"
+    # model: str = "llama3.2:1b"
+    model: str = "deepseek-ai/deepseek-v3.2"
     temperature: float = 0.0
     top_k: int = 3
     use_hybrid: bool = True

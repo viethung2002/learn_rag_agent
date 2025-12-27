@@ -50,7 +50,7 @@ class TestAgenticAskEndpoint:
             "/api/v1/ask-agentic",
             json={
                 "query": "What is machine learning?",
-                "model": "llama3.2:1b",
+                "model": "deepseek-ai/deepseek-v3.2",
                 "top_k": 3,
                 "use_hybrid": True
             }
@@ -101,7 +101,7 @@ class TestAgenticAskEndpoint:
         """Test agentic RAG without query field returns 422."""
         response = client.post(
             "/api/v1/ask-agentic",
-            json={"model": "llama3.2:1b"}
+            json={"model": "deepseek-ai/deepseek-v3.2"}
         )
 
         assert response.status_code == 422

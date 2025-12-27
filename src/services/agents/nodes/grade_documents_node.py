@@ -89,7 +89,11 @@ async def ainvoke_grade_documents_step(
         )
 
         # Get LLM from runtime context
-        llm = runtime.context.ollama_client.get_langchain_model(
+        # llm = runtime.context.ollama_client.get_langchain_model(
+        #     model=runtime.context.model_name,
+        #     temperature=0.0,
+        # )
+        llm = runtime.context.nvidia_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.0,
         )
