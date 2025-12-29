@@ -108,7 +108,7 @@ class OpenSearchSettings(BaseConfigSettings):
 class LangfuseSettings(BaseConfigSettings):
     model_config = SettingsConfigDict(
         env_file=[".env", str(ENV_FILE_PATH)],
-        env_prefix="LANGFUSE__",
+        env_prefix="LANGFUSE_",
         extra="ignore",
         frozen=True,
         case_sensitive=False,
@@ -178,7 +178,7 @@ class Settings(BaseConfigSettings):
     gemini_api_key: str = ""
     gemini_timeout: int = 300
 
-    nvidia_model: str = "deepseek-ai/deepseek-v3.2"
+    nvidia_model: str = "nvidia/nemotron-3-nano-30b-a3b"
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_timeout: int = 300

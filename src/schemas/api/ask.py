@@ -18,7 +18,7 @@ class AskRequest(BaseModel):
                 "query": "What are transformers in machine learning?",
                 "top_k": 3,
                 "use_hybrid": True,
-                "model": "gemini-2.5-flash",
+                "model": "nvidia/nemotron-3-nano-30b-a3b",
                 "categories": ["cs.AI", "cs.LG"],
             }
         }

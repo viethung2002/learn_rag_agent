@@ -3,6 +3,7 @@ import time
 from typing import Dict
 
 from langgraph.runtime import Runtime
+from langchain_core.documents import Document
 
 from ..context import Context
 from ..models import GradeDocuments, GradingResult
@@ -11,6 +12,33 @@ from ..state import AgentState
 from .utils import get_latest_context, get_latest_query
 
 logger = logging.getLogger(__name__)
+
+import re
+import ast
+
+
+def parse_documents_from_string(raw: str) -> list[Document]:
+    documents = []
+
+    # Regex tách từng Document(...)
+    pattern = re.compile(
+        r"Document\s*\(\s*metadata=(\{.*?\})\s*,\s*page_content=\"(.*?)\"\s*\)",
+        re.DOTALL
+    )
+
+    for match in pattern.finditer(raw):
+        metadata_str, page_content = match.groups()
+
+        metadata = ast.literal_eval(metadata_str)
+
+        documents.append(
+            Document(
+                page_content=page_content,
+                metadata=metadata
+            )
+        )
+
+    return documents
 
 
 async def ainvoke_grade_documents_step(
@@ -33,6 +61,20 @@ async def ainvoke_grade_documents_step(
     # Get query and context
     question = get_latest_query(state["messages"])
     context = get_latest_context(state["messages"])
+    docs = parse_documents_from_string(context)
+    
+    sources = []
+    for doc in docs:
+        logger.warning(f"NODE: document type: {type(doc)}")
+        logger.warning(f"NODE: document: {doc}")
+        source = doc.metadata.get("source")
+        if source:
+            sources.append(source)
+
+    # Deduplicate, giữ nguyên thứ tự
+    sources = list(dict.fromkeys(sources))
+    logger.warning(f"NODE: document - sources: {sources}")
+
 
     # Extract document chunks from context for logging
     chunks_preview = []
@@ -154,4 +196,5 @@ async def ainvoke_grade_documents_step(
     return {
         "routing_decision": route,
         "grading_results": [grading_result],
+        "sources": sources,
     }
