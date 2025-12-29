@@ -77,7 +77,6 @@ async def ainvoke_rewrite_query_step(
         llm = runtime.context.nvidia_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.3,  # Lower temperature for more focused rewriting
-            use_structured_output=True,
         )
         structured_llm = llm.with_structured_output(QueryRewriteOutput)
 

@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 class NvidiaClient:
     def __init__(self, settings: Settings):
-        api_key = settings.nvidia_api_key
-        if not api_key:
+        self.api_key = settings.nvidia_api_key
+        if not self.api_key:
             raise ValueError("NVIDIA_API_KEY is not configured")
 
         self.default_model = settings.nvidia_model
@@ -29,7 +29,7 @@ class NvidiaClient:
         
         # Sử dụng nvidia_api_key để rõ ràng hơn (tương đương api_key)
         self.client = ChatNVIDIA(
-            nvidia_api_key=api_key,
+            nvidia_api_key=self.api_key,
             model=self.default_model,
             temperature=0.7,
             top_p=0.9,
@@ -39,27 +39,25 @@ class NvidiaClient:
 
         logger.info(f"NvidiaClient initialized with model: {self.default_model}")
 
-    async def health_check(self) -> Dict[str, Any]:
-        """Check if Nvidia service is healthy by sending a simple prompt."""
-        try:
-            response = await self.client.ainvoke(
-                [HumanMessage(content="Respond with only the word: OK")],
-                {"max_tokens": 5, "temperature": 0.0}  # deterministic
-            )
-            
-            response_text = response.content.strip().upper()
-            
-            if response_text == "OK":
+    def get_langchain_model(self, model, temperature):
+        client = ChatNVIDIA(
+            nvidia_api_key=self.api_key,
+            model=model,
+            temperature=temperature,
+            top_p=0.9,
+            max_tokens=2048
+        )
+        return client
+    
+    async def health_check(self):
+            try:
+                models = self.client.get_available_models()
                 return {
                     "status": "healthy",
-                    "message": "Nvidia service is running",
-                    "model": self.default_model,
+                    "model_count": len(models),
                 }
-            else:
-                raise Exception(f"Health check failed: unexpected response '{response.content}'")
-                
-        except Exception as e:
-            raise NvidiaConnectionError(f"Nvidia health check failed: {str(e)}")
+            except Exception as e:
+                raise NvidiaConnectionError(f"Nvidia health check failed: {e}")
 
     async def list_models(self) -> List[Dict[str, Any]]:
         """
