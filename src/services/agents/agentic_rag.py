@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Dict, List, Optional
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -97,13 +97,37 @@ class AgenticRAGService:
             use_hybrid=self.graph_config.use_hybrid,
         )
         tools = [retriever_tool]
+        tools_by_name = {tool.name: tool for tool in tools}
+        async def tool_node(state: dict):
+            """Performs the tool call"""
+            result = []
+            for tool_call in state["messages"][-1].tool_calls:
+                tool = tools_by_name[tool_call["name"]]
+                observations = await tool.ainvoke(tool_call["args"])
+                relevant_sources = [
+                    {
+                        "arxiv_id": observation.metadata.get("arxiv_id"),
+                        "title": observation.metadata.get("title"),
+                        "authors": observation.metadata.get("authors"),
+                        "url": observation.metadata.get("source"),
+                        "relevance_score": observation.metadata.get("top_k"),
+                    }
+                    for observation in observations
+                ]
+                
+                result.append(ToolMessage(content=observations, tool_call_id=tool_call["id"]))
+            return {
+                "messages": result,
+                "relevant_sources": relevant_sources
+            }
 
         # Add nodes (just function references - no closures needed!)
         logger.info("Adding nodes to workflow graph")
         workflow.add_node("guardrail", ainvoke_guardrail_step)
         workflow.add_node("out_of_scope", ainvoke_out_of_scope_step)
         workflow.add_node("retrieve", ainvoke_retrieve_step)
-        workflow.add_node("tool_retrieve", ToolNode(tools))
+        workflow.add_node("tool_retrieve", tool_node)
+        # workflow.add_node("tool_retrieve", ToolNode(tools))
         workflow.add_node("grade_documents", ainvoke_grade_documents_step)
         workflow.add_node("rewrite_query", ainvoke_rewrite_query_step)
         workflow.add_node("generate_answer", ainvoke_generate_answer_step)
@@ -363,8 +387,8 @@ class AgenticRAGService:
                 sources.append(source.to_dict())
             elif isinstance(source, dict):
                 sources.append(source)
-
-        return sources
+        
+        return [source['url'] for source in sources]
 
     def _extract_reasoning_steps(self, result: dict) -> List[str]:
         """Extract reasoning steps from graph result."""
