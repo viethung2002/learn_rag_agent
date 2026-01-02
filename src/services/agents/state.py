@@ -64,7 +64,10 @@ class AgentState(TypedDict):
     retrieval_attempts: int
     guardrail_result: Optional[GuardrailScoring]
     routing_decision: Optional[RoutingDecision]
-    sources: Optional[Dict[str, Any]]
+    sources: Annotated[
+        Optional[Dict[str, Any]],
+        lambda _old, new: new
+    ]
     relevant_sources: List[SourceItem]
     relevant_tool_artefacts: Optional[List[ToolArtefact]]
     grading_results: List[GradingResult]
