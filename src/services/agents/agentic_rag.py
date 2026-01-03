@@ -313,6 +313,9 @@ class AgenticRAGService:
                 config=config,
                 context=runtime_context,
             )
+            
+            trace_id = self.langfuse_tracer.get_trace_id()
+            logger.warning(f"Trace id: {trace_id}")
 
             execution_time = time.time() - start_time
             logger.info(f"✓ Graph execution completed in {execution_time:.2f}s")
@@ -354,6 +357,7 @@ class AgenticRAGService:
                 "rewritten_query": result.get("rewritten_query"),
                 "execution_time": execution_time,
                 "guardrail_score": result.get("guardrail_result").score if result.get("guardrail_result") else None,
+                "trace_id": trace_id,
             }
 
         except Exception as e:
