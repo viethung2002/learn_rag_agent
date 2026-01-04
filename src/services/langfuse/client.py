@@ -176,7 +176,7 @@ class LangfuseTracer:
             return False
 
         try:
-            self.client.score(
+            self.client.create_score(
                 trace_id=trace_id,
                 name=name,
                 value=score,
@@ -185,7 +185,7 @@ class LangfuseTracer:
             logger.info(f"Submitted feedback for trace {trace_id}: score={score}")
             return True
         except Exception as e:
-            logger.error(f"Error submitting feedback: {e}")
+            logger.error(f"Error submitting feedback: {e}", exc_info=True)
             return False
 
     def flush(self):
