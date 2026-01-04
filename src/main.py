@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
     telegram_service = make_telegram_service(
         opensearch_client=app.state.opensearch_client,
         embeddings_client=app.state.embeddings_service,
-        ollama_client=app.state.ollama_client,
+        nvidia_client=app.state.nvidia_client,
         cache_client=app.state.cache_client,
         langfuse_tracer=app.state.langfuse_tracer,
     )

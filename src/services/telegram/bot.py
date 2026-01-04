@@ -18,14 +18,15 @@ class TelegramBot:
         bot_token: str,
         opensearch_client,
         embeddings_client,
-        ollama_client,
+        # ollama_client,
+        nvidia_client,
         cache_client=None,
     ):
         """Initialize bot with required services."""
         self.bot_token = bot_token
         self.opensearch = opensearch_client
         self.embeddings = embeddings_client
-        self.ollama = ollama_client
+        self.nvidia_client = nvidia_client
         self.cache = cache_client
         self.application: Optional[Application] = None
 
@@ -188,9 +189,18 @@ class TelegramBot:
 
             # Generate answer
             prompt = RAGPromptBuilder().create_rag_prompt(query=query, chunks=chunks)
-            ollama_response = await self.ollama.generate(model="llama3.2:1b", prompt=prompt, stream=False)
-            answer = ollama_response.get("response", "") if ollama_response else ""
-
+            # Ollma
+            # ollama_response = await self.ollama.generate(model="llama3.2:1b", prompt=prompt, stream=False)
+            # answer = ollama_response.get("response", "") if ollama_response else ""
+            
+            # Modify vs NVIDIA
+            response = await self.nvidia_client.generate(
+                model='nvidia/nemotron-3-nano-30b-a3b',
+                prompt=prompt,
+                stream=False
+            )
+            answer = response.get('text')
+            
             # Build response
             response = AskResponse(
                 query=query, answer=answer, sources=sources, chunks_used=len(chunks), search_mode="hybrid"
