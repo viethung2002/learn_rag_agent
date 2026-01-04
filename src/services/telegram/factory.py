@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 def make_telegram_service(
     opensearch_client,
     embeddings_client,
-    ollama_client,
+    # ollama_client,
+    nvidia_client,
     cache_client=None,
     langfuse_tracer=None,
 ) -> Optional[TelegramBot]:
@@ -41,7 +42,7 @@ def make_telegram_service(
         bot_token=settings.telegram.bot_token,
         opensearch_client=opensearch_client,
         embeddings_client=embeddings_client,
-        ollama_client=ollama_client,
+        nvidia_client=nvidia_client,
         cache_client=cache_client,
     )
 
