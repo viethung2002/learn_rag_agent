@@ -58,23 +58,23 @@ async def ainvoke_guardrail_step(
 
     # Create span for guardrail validation (v2 SDK)
     span = None
-    if runtime.context.langfuse_enabled and runtime.context.trace:
-        try:
-            span = runtime.context.langfuse_tracer.create_span(
-                trace=runtime.context.trace,
-                name="guardrail_validation",
-                input_data={
-                    "query": query,
-                    "threshold": runtime.context.guardrail_threshold,
-                },
-                metadata={
-                    "node": "guardrail",
-                    "model": runtime.context.model_name,
-                },
-            )
-            logger.debug("Created Langfuse span for guardrail validation (v2 SDK)")
-        except Exception as e:
-            logger.warning(f"Failed to create span for guardrail validation: {e}")
+    # if runtime.context.langfuse_enabled and runtime.context.trace:
+    #     try:
+    #         span = runtime.context.langfuse_tracer.create_span(
+    #             trace=runtime.context.trace,
+    #             name="guardrail_validation",
+    #             input_data={
+    #                 "query": query,
+    #                 "threshold": runtime.context.guardrail_threshold,
+    #             },
+    #             metadata={
+    #                 "node": "guardrail",
+    #                 "model": runtime.context.model_name,
+    #             },
+    #         )
+    #         logger.debug("Created Langfuse span for guardrail validation (v2 SDK)")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to create span for guardrail validation: {e}")
 
     try:
         # Create guardrail prompt from template
@@ -116,7 +116,7 @@ async def ainvoke_guardrail_step(
             )
 
     except Exception as e:
-        logger.error(f"LLM guardrail validation failed: {e}, falling back to default")
+        logger.error(f"LLM guardrail validation failed: {e}, falling back to default", exc_info=True)
 
         # Fallback to a conservative default if LLM fails
         response = GuardrailScoring(

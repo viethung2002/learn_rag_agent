@@ -43,24 +43,24 @@ async def ainvoke_retrieve_step(
 
     # Create span for retrieval initiation
     span = None
-    if runtime.context.langfuse_enabled and runtime.context.trace:
-        try:
-            span = runtime.context.langfuse_tracer.create_span(
-                trace=runtime.context.trace,
-                name="document_retrieval_initiation",
-                input_data={
-                    "query": question,
-                    "attempt": current_attempts + 1,
-                    "max_attempts": max_attempts,
-                },
-                metadata={
-                    "node": "retrieve",
-                    "top_k": runtime.context.top_k,
-                },
-            )
-            logger.debug(f"Created Langfuse span for retrieval attempt {current_attempts + 1}")
-        except Exception as e:
-            logger.warning(f"Failed to create span for retrieve node: {e}")
+    # if runtime.context.langfuse_enabled and runtime.context.trace:
+    #     try:
+    #         span = runtime.context.langfuse_tracer.create_span(
+    #             trace=runtime.context.trace,
+    #             name="document_retrieval_initiation",
+    #             input_data={
+    #                 "query": question,
+    #                 "attempt": current_attempts + 1,
+    #                 "max_attempts": max_attempts,
+    #             },
+    #             metadata={
+    #                 "node": "retrieve",
+    #                 "top_k": runtime.context.top_k,
+    #             },
+    #         )
+    #         logger.debug(f"Created Langfuse span for retrieval attempt {current_attempts + 1}")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to create span for retrieve node: {e}")
 
     # Check if max attempts reached
     if current_attempts >= max_attempts:

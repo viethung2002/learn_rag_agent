@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import InMemorySaver
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
@@ -26,7 +27,11 @@ from .nodes import (
 )
 from .state import AgentState
 from .tools import create_retriever_tool
-
+logging.basicConfig(
+    filename="app.log",      # file txt
+    level=logging.INFO,      # mức log
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -182,7 +187,8 @@ class AgenticRAGService:
 
         # Compile graph
         logger.info("Compiling LangGraph workflow")
-        compiled_graph = workflow.compile()
+        checkpointer = InMemorySaver()
+        compiled_graph = workflow.compile(checkpointer=checkpointer)
         logger.info("✓ Graph compilation successful")
 
         return compiled_graph
@@ -260,10 +266,29 @@ class AgenticRAGService:
             start_time = time.time()
 
             logger.info("Invoking LangGraph workflow")
+            
+            # Create config with CallbackHandler if Langfuse is enabled (v3 SDK)
+            config = {
+                "thread_id": f"user_{user_id}_session_{int(time.time())}",
+                "configurable": {"thread_id": "1"}
+            }
+
+            states  = list(self.graph.get_state_history(config))
+            logger.warning(f"STATEs:{states}")
+            for state in states:
+                logger.warning(f"STATE.values before:{state.values}")
+                
+    
+            # Tạo message mới
+            new_message = HumanMessage(content=query)
+            
+            # Append vào messages cũ (nếu có)
+            messages = []
+            messages.append(new_message)
 
             # State initialization
             state_input = {
-                "messages": [HumanMessage(content=query)],
+                "messages": new_message,
                 "retrieval_attempts": 0,
                 "guardrail_result": None,
                 "routing_decision": None,
@@ -292,8 +317,6 @@ class AgenticRAGService:
                 guardrail_threshold=self.graph_config.guardrail_threshold,
             )
 
-            # Create config with CallbackHandler if Langfuse is enabled (v3 SDK)
-            config = {"thread_id": f"user_{user_id}_session_{int(time.time())}"}
 
             # Add CallbackHandler for automatic LLM tracing
             # IMPORTANT: CallbackHandler automatically inherits the current span context
@@ -313,6 +336,11 @@ class AgenticRAGService:
                 config=config,
                 context=runtime_context,
             )
+
+            states  = list(self.graph.get_state_history(config))
+            logger.warning(f"STATEs:{states}")
+            for state in states:
+                logger.warning(f"STATE.values after:{state.values}")
             
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")

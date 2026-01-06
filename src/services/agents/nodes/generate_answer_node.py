@@ -4,6 +4,10 @@ from typing import Dict, List
 
 from langchain_core.messages import AIMessage
 from langgraph.runtime import Runtime
+from langchain_core.messages.utils import (
+    trim_messages,  
+    count_tokens_approximately  
+)
 
 from ..context import Context
 from ..prompts import GENERATE_ANSWER_PROMPT
@@ -51,26 +55,26 @@ async def ainvoke_generate_answer_step(
 
     # Create span for answer generation
     span = None
-    if runtime.context.langfuse_enabled and runtime.context.trace:
-        try:
-            span = runtime.context.langfuse_tracer.create_span(
-                trace=runtime.context.trace,
-                name="answer_generation",
-                input_data={
-                    "query": question,
-                    "context_length": len(context),
-                    "sources_count": sources_count,
-                    "chunks_used": chunks_preview,
-                },
-                metadata={
-                    "node": "generate_answer",
-                    "model": runtime.context.model_name,
-                    "temperature": runtime.context.temperature,
-                },
-            )
-            logger.debug("Created Langfuse span for answer generation")
-        except Exception as e:
-            logger.warning(f"Failed to create span for generate_answer node: {e}")
+    # if runtime.context.langfuse_enabled and runtime.context.trace:
+    #     try:
+    #         span = runtime.context.langfuse_tracer.create_span(
+    #             trace=runtime.context.trace,
+    #             name="answer_generation",
+    #             input_data={
+    #                 "query": question,
+    #                 "context_length": len(context),
+    #                 "sources_count": sources_count,
+    #                 "chunks_used": chunks_preview,
+    #             },
+    #             metadata={
+    #                 "node": "generate_answer",
+    #                 "model": runtime.context.model_name,
+    #                 "temperature": runtime.context.temperature,
+    #             },
+    #         )
+    #         logger.debug("Created Langfuse span for answer generation")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to create span for generate_answer node: {e}")
 
     try:
         # Create answer generation prompt from template
@@ -78,6 +82,18 @@ async def ainvoke_generate_answer_step(
             context=context,
             question=question,
         )
+        
+        messages = trim_messages(  
+            state["messages"],
+            strategy="last",
+            token_counter=count_tokens_approximately,
+            max_tokens=1000000,
+            start_on="human",
+            end_on=("human", "tool"),
+        )
+        messages.append(AIMessage(content=answer_prompt))
+        state["messages"] = messages
+        logger.warning(f"MESSAGES HAI: {messages}")
 
         # Get LLM from runtime context
         # llm = runtime.context.ollama_client.get_langchain_model(
@@ -91,11 +107,13 @@ async def ainvoke_generate_answer_step(
 
         # Invoke LLM for answer generation
         logger.info("Invoking LLM for answer generation")
-        response = await llm.ainvoke(answer_prompt)
+        response = await llm.ainvoke(messages)
 
         # Extract content from response
         answer = response.content if hasattr(response, 'content') else str(response)
         logger.info(f"Generated answer of length: {len(answer)} characters")
+
+        # return {"messages": [response]}
 
         # Update span with successful result
         if span:
