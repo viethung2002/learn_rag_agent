@@ -46,25 +46,25 @@ async def ainvoke_grade_documents_step(
 
     # Create span for document grading
     span = None
-    if runtime.context.langfuse_enabled and runtime.context.trace:
-        try:
-            span = runtime.context.langfuse_tracer.create_span(
-                trace=runtime.context.trace,
-                name="document_grading",
-                input_data={
-                    "query": question,
-                    "context_length": len(context) if context else 0,
-                    "has_context": context is not None,
-                    "chunks_received": chunks_preview,
-                },
-                metadata={
-                    "node": "grade_documents",
-                    "model": runtime.context.model_name,
-                },
-            )
-            logger.debug("Created Langfuse span for document grading")
-        except Exception as e:
-            logger.warning(f"Failed to create span for grade_documents node: {e}")
+    # if runtime.context.langfuse_enabled and runtime.context.trace:
+    #     try:
+    #         span = runtime.context.langfuse_tracer.create_span(
+    #             trace=runtime.context.trace,
+    #             name="document_grading",
+    #             input_data={
+    #                 "query": question,
+    #                 "context_length": len(context) if context else 0,
+    #                 "has_context": context is not None,
+    #                 "chunks_received": chunks_preview,
+    #             },
+    #             metadata={
+    #                 "node": "grade_documents",
+    #                 "model": runtime.context.model_name,
+    #             },
+    #         )
+    #         logger.debug("Created Langfuse span for document grading")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to create span for grade_documents node: {e}")
 
     if not context:
         logger.warning("No context found, routing to rewrite_query")
