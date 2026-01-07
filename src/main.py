@@ -21,6 +21,7 @@ from src.services.nvidia.factory import make_nvidia_client
 from src.services.opensearch.factory import make_opensearch_client
 from src.services.pdf_parser.factory import make_pdf_parser_service
 from src.services.telegram.factory import make_telegram_service
+from src.services.agents.factory import make_agentic_rag_service
 
 
 # Setup logging
@@ -98,6 +99,17 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to start Telegram bot: {e}")
     else:
         logger.info("Telegram bot not configured - skipping initialization")
+    
+    # Initialize Agentic
+    app.state.agentic_rag = make_agentic_rag_service(
+        opensearch_client=app.state.opensearch_client,
+        # ollama_client=ollama,
+        nvidia_client=app.state.nvidia_client,
+        embeddings_client=app.state.embeddings_service,
+        langfuse_tracer=app.state.langfuse_tracer,
+        # model=settings.ollama_model,
+        # model=settings.nvidia_model,
+    )
 
     logger.info("API ready")
     yield

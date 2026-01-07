@@ -207,6 +207,16 @@ class AgenticRAGService:
         :returns: Dictionary with answer, sources, reasoning steps, and metadata
         :raises ValueError: If query is empty
         """
+        config = {
+            # "thread_id": f"user_{user_id}_session_{int(time.time())}",
+            "configurable": {"thread_id": "1"}
+        }
+
+        states  = list(self.graph.get_state_history(config))
+        logger.warning(f"STATEs:(ask_first_func){states}")
+        for state in states:
+            logger.warning(f"STATE.values before:{state.values}")
+        
         model_to_use = model or self.graph_config.model
 
         logger.info("=" * 80)
@@ -254,7 +264,13 @@ class AgenticRAGService:
                 return await self._run_workflow(query, model_to_use, user_id, None)
 
         try:
-            return await _execute_with_trace()
+            rs = await _execute_with_trace()
+            config = {
+                "configurable": {"thread_id": "1"}
+            }
+            states  = list(self.graph.get_state_history(config))
+            logger.warning(f"STATEs:(ask_ed_func()){states}")
+            return rs
         except Exception as e:
             logger.error(f"Error in Agentic RAG execution: {str(e)}")
             logger.exception("Full traceback:")
@@ -269,14 +285,14 @@ class AgenticRAGService:
             
             # Create config with CallbackHandler if Langfuse is enabled (v3 SDK)
             config = {
-                "thread_id": f"user_{user_id}_session_{int(time.time())}",
+                # "thread_id": f"user_{user_id}_session_{int(time.time())}",
                 "configurable": {"thread_id": "1"}
             }
 
-            states  = list(self.graph.get_state_history(config))
-            logger.warning(f"STATEs:{states}")
-            for state in states:
-                logger.warning(f"STATE.values before:{state.values}")
+            # states  = list(self.graph.get_state_history(config))
+            # logger.warning(f"STATEs:{states}")
+            # for state in states:
+            #     logger.warning(f"STATE.values before:{state.values}")
                 
     
             # Tạo message mới
@@ -337,10 +353,10 @@ class AgenticRAGService:
                 context=runtime_context,
             )
 
-            states  = list(self.graph.get_state_history(config))
-            logger.warning(f"STATEs:{states}")
-            for state in states:
-                logger.warning(f"STATE.values after:{state.values}")
+            # states  = list(self.graph.get_state_history(config))
+            # logger.warning(f"STATEs:{states}")
+            # for state in states:
+            #     logger.warning(f"STATE.values after:{state.values}")
             
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")
