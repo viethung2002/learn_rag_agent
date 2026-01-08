@@ -11,13 +11,12 @@ from langchain_core.messages.utils import (
     trim_messages,
     count_tokens_approximately,
 )
-
+from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START
 from langgraph.checkpoint.memory import InMemorySaver
 
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
-
-
+from typing import TypedDict, Annotated, List
 # =========================
 # 1. Initialize LLM
 # =========================
@@ -26,7 +25,7 @@ model = ChatNVIDIA(
     model="nvidia/nemotron-3-nano-30b-a3b",
     temperature=0.7,
     top_p=0.9,
-    max_completion_tokens=128,
+    max_completion_tokens=512,
 )
 
 
@@ -35,7 +34,7 @@ model = ChatNVIDIA(
 # 2. Define Manual State
 # =========================
 class ChatState(TypedDict):
-    messages: List[BaseMessage]
+    messages: Annotated[List[BaseMessage], add_messages]
     temp: int
 
 
@@ -44,6 +43,9 @@ class ChatState(TypedDict):
 # =========================
 def call_model(state: ChatState) -> ChatState:
     # Trim history before sending to LLM
+    print("---call model ----")
+    print(f"current msg state {state['messages']}")
+    print("------")
     trimmed_messages = trim_messages(
         state["messages"],
         strategy="last",
@@ -58,6 +60,7 @@ def call_model(state: ChatState) -> ChatState:
     # Add AI response
     state["messages"].append(response)
     state["temp"] = 1
+    return state
 
 
 
@@ -85,43 +88,15 @@ config = {
 # ---- Turn 1
 state = {
     "messages": [
-        HumanMessage(content="Hi, my name is Bob.")
-    ]
+        HumanMessage(content="Hi, my name is Bob. I'm 18 years old."),
+    ],
+    "temp": 1
 }
 
 result = graph.invoke(state, config)
 result["messages"][-1].pretty_print()
+print('------------------')
 
-# # ---- Turn 2
-# state = {
-#     "messages": result["messages"] + [
-#         HumanMessage(content="Write a short poem about cats.")
-#     ]
-# }
-
-# result = graph.invoke(state, config)
-# result["messages"][-1].pretty_print()
-
-# # ---- Turn 3
-# state = {
-#     "messages": result["messages"] + [
-#         HumanMessage(content="Now do the same but for dogs.")
-#     ]
-# }
-
-# result = graph.invoke(state, config)
-# result["messages"][-1].pretty_print()
-
-# ---- Turn 4 (memory test)
-state = {
-    "messages": result["messages"] + [
-        HumanMessage(content="What's my name?")
-    ]
-}
-result = graph.invoke(state, config)
-result["messages"][-1].pretty_print()
-
-print('final result', result)
-
-msgs = list(graph.get_state_history(config))
-print(msgs)
+input_2 = {"messages": [HumanMessage(content="What's my name?")]}
+result_2 = graph.invoke(input_2, config)
+result_2["messages"][-1].pretty_print()
