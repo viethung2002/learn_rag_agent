@@ -211,11 +211,6 @@ class AgenticRAGService:
             # "thread_id": f"user_{user_id}_session_{int(time.time())}",
             "configurable": {"thread_id": "1"}
         }
-
-        states  = list(self.graph.get_state_history(config))
-        logger.warning(f"STATEs:(ask_first_func){states}")
-        for state in states:
-            logger.warning(f"STATE.values before:{state.values}")
         
         model_to_use = model or self.graph_config.model
 
@@ -264,13 +259,7 @@ class AgenticRAGService:
                 return await self._run_workflow(query, model_to_use, user_id, None)
 
         try:
-            rs = await _execute_with_trace()
-            config = {
-                "configurable": {"thread_id": "1"}
-            }
-            states  = list(self.graph.get_state_history(config))
-            logger.warning(f"STATEs:(ask_ed_func()){states}")
-            return rs
+            return await _execute_with_trace()
         except Exception as e:
             logger.error(f"Error in Agentic RAG execution: {str(e)}")
             logger.exception("Full traceback:")
@@ -289,22 +278,10 @@ class AgenticRAGService:
                 "configurable": {"thread_id": "1"}
             }
 
-            # states  = list(self.graph.get_state_history(config))
-            # logger.warning(f"STATEs:{states}")
-            # for state in states:
-            #     logger.warning(f"STATE.values before:{state.values}")
-                
-    
-            # Tạo message mới
-            new_message = HumanMessage(content=query)
-            
-            # Append vào messages cũ (nếu có)
-            messages = []
-            messages.append(new_message)
 
             # State initialization
             state_input = {
-                "messages": new_message,
+                "messages": [HumanMessage(content=query)],
                 "retrieval_attempts": 0,
                 "guardrail_result": None,
                 "routing_decision": None,

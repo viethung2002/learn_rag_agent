@@ -51,6 +51,8 @@ async def ainvoke_guardrail_step(
     """
     logger.info("NODE: guardrail_validation")
     start_time = time.time()
+    
+    logger.warning(f"STATEs:(ainvoke_guardrail_step){state["messages"]}")
 
     # Get the latest user query
     query = get_latest_query(state["messages"])
