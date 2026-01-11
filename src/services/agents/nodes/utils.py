@@ -27,6 +27,16 @@ def extract_sources_from_tool_messages(messages: List) -> List[SourceItem]:
     return sources
 
 
+def route_after_should_retrieve(messages: List) -> str:
+    """Route based on should_retrieve decision"""
+    decision = messages[-1].get("should_retrieve_result")
+    if decision and not decision.should_retrieve:
+        logger.info("LLM decided: No retrieval needed → direct to answer generation")
+        return "generate_answer"
+    logger.info("LLM decided: Retrieval needed → proceed to retrieve")
+    return "retrieve"
+
+
 def extract_tool_artefacts(messages: List) -> List[ToolArtefact]:
     """Extract tool artifacts from messages.
 
@@ -92,6 +102,21 @@ def get_latest_query(messages: List) -> str:
     raise ValueError("No user query found in messages")
 
 
+def get_old_message(messages: List) -> str:
+    """Get the previous user message before the latest one.
+
+    :param messages: List of messages
+    :returns: Previous user message text or empty string
+    """
+    old_msg = []
+    for ix, msg in enumerate(messages):
+        if ix == len(messages) - 1:
+            break
+        if isinstance(msg, HumanMessage) or (isinstance(msg, AIMessage) and isinstance(messages[ix + 1], HumanMessage)):
+            old_msg.append(msg)
+    return old_msg
+
+
 def get_latest_context(messages: List) -> str:
     """Get the latest context from tool messages.
 
@@ -103,3 +128,6 @@ def get_latest_context(messages: List) -> str:
             return msg.content if hasattr(msg, "content") else ""
 
     return ""
+
+
+
