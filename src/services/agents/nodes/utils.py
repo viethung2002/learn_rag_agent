@@ -102,18 +102,29 @@ def get_latest_query(messages: List) -> str:
     raise ValueError("No user query found in messages")
 
 
-def get_old_message(messages: List) -> str:
-    """Get the previous user message before the latest one.
-
-    :param messages: List of messages
-    :returns: Previous user message text or empty string
+def get_old_message(messages: List) -> List:
     """
+    Get all messages before last human message
+    
+    :param messages: List of messages
+    :returns: List of old messages
+    """
+    # Fist, fine the last of human message
+    location = -1
+    for idx, msg in enumerate(reversed(messages)):
+        if isinstance(msg, HumanMessage):
+            location = len(messages) - idx - 1
+            break
+    if location == -1:
+        return []
     old_msg = []
     for ix, msg in enumerate(messages):
-        if ix == len(messages) - 1:
+        if ix == location:
             break
-        if isinstance(msg, HumanMessage) or (isinstance(msg, AIMessage) and isinstance(messages[ix + 1], HumanMessage)):
-            old_msg.append(msg)
+        if isinstance(msg, HumanMessage):
+            old_msg.append(f"User: {msg.content}")
+        elif isinstance(msg, AIMessage) and isinstance(messages[ix + 1], HumanMessage):
+            old_msg.append(f"Assistant: {msg.content}")
     return old_msg
 
 
