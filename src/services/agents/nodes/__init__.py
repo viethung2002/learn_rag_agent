@@ -4,6 +4,7 @@ from .guardrail_node import ainvoke_guardrail_step, continue_after_guardrail
 from .out_of_scope_node import ainvoke_out_of_scope_step
 from .retrieve_node import ainvoke_retrieve_step
 from .rewrite_query_node import ainvoke_rewrite_query_step
+from .should_retrieve_node import ainvoke_should_retrieve_step, route_after_should_retrieve
 
 __all__ = [
     "ainvoke_guardrail_step",
@@ -13,4 +14,6 @@ __all__ = [
     "ainvoke_grade_documents_step",
     "ainvoke_rewrite_query_step",
     "ainvoke_generate_answer_step",
+    "ainvoke_should_retrieve_step",
+    "route_after_should_retrieve"
 ]
