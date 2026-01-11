@@ -198,6 +198,7 @@ class AgenticRAGService:
         query: str,
         user_id: str = "api_user",
         model: Optional[str] = None,
+        thread_id: Optional[str] = "1",
     ) -> dict:
         """Ask a question using agentic RAG.
 
@@ -207,11 +208,6 @@ class AgenticRAGService:
         :returns: Dictionary with answer, sources, reasoning steps, and metadata
         :raises ValueError: If query is empty
         """
-        config = {
-            # "thread_id": f"user_{user_id}_session_{int(time.time())}",
-            "configurable": {"thread_id": "1"}
-        }
-        
         model_to_use = model or self.graph_config.model
 
         logger.info("=" * 80)
@@ -254,9 +250,9 @@ class AgenticRAGService:
                         session_id=f"session_{user_id}",
                     )
                     logger.debug(f"Trace created: {trace_obj}")
-                    return await self._run_workflow(query, model_to_use, user_id, trace_obj)
+                    return await self._run_workflow(query, model_to_use, user_id, trace_obj, thread_id)
             else:
-                return await self._run_workflow(query, model_to_use, user_id, None)
+                return await self._run_workflow(query, model_to_use, user_id, None, thread_id)
 
         try:
             return await _execute_with_trace()
@@ -265,19 +261,12 @@ class AgenticRAGService:
             logger.exception("Full traceback:")
             raise
 
-    async def _run_workflow(self, query: str, model_to_use: str, user_id: str, trace) -> dict:
+    async def _run_workflow(self, query: str, model_to_use: str, user_id: str, trace, thread_id) -> dict:
         """Execute the workflow with the given trace context."""
         try:
             start_time = time.time()
 
             logger.info("Invoking LangGraph workflow")
-            
-            # Create config with CallbackHandler if Langfuse is enabled (v3 SDK)
-            config = {
-                # "thread_id": f"user_{user_id}_session_{int(time.time())}",
-                "configurable": {"thread_id": "1"}
-            }
-
 
             # State initialization
             state_input = {
@@ -309,6 +298,10 @@ class AgenticRAGService:
                 max_retrieval_attempts=self.graph_config.max_retrieval_attempts,
                 guardrail_threshold=self.graph_config.guardrail_threshold,
             )
+            
+            config = {
+                "configurable": {"thread_id": thread_id},
+            }
 
 
             # Add CallbackHandler for automatic LLM tracing
@@ -319,7 +312,11 @@ class AgenticRAGService:
                     # V3 SDK: CallbackHandler() automatically uses current trace context
                     # No need to pass trace explicitly - it's handled by context propagation
                     callback_handler = CallbackHandler()
-                    config["callbacks"] = [callback_handler]
+                    # config["callbacks"] = [callback_handler]
+                    config = {
+                        "configurable": {"thread_id": thread_id},
+                        "callbacks": [callback_handler]
+                    }
                     logger.info("✓ CallbackHandler added (will auto-link to current trace)")
                 except Exception as e:
                     logger.warning(f"Failed to create CallbackHandler: {e}")
@@ -330,10 +327,6 @@ class AgenticRAGService:
                 context=runtime_context,
             )
 
-            # states  = list(self.graph.get_state_history(config))
-            # logger.warning(f"STATEs:{states}")
-            # for state in states:
-            #     logger.warning(f"STATE.values after:{state.values}")
             
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")
