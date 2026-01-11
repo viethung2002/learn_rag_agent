@@ -39,6 +39,7 @@ async def ask_agentic(
     try:
         result = await agentic_rag.ask(
             query=request.query,
+            model=request.model,
         )
 
         return AgenticAskResponse(

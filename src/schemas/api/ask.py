@@ -9,7 +9,7 @@ class AskRequest(BaseModel):
     query: str = Field(..., description="User's question", min_length=1, max_length=1000)
     top_k: int = Field(3, description="Number of top chunks to retrieve", ge=1, le=10)
     use_hybrid: bool = Field(True, description="Use hybrid search (BM25 + vector)")
-    model: str = Field("llama3.2:1b", description="Ollama model to use for generation")
+    model: str = Field("llama3.2:1b", description="Nvidia model to use for generation")
     categories: Optional[List[str]] = Field(None, description="Filter by arXiv categories")
 
     class Config:
