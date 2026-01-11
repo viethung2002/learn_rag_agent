@@ -46,25 +46,25 @@ async def ainvoke_grade_documents_step(
 
     # Create span for document grading
     span = None
-    if runtime.context.langfuse_enabled and runtime.context.trace:
-        try:
-            span = runtime.context.langfuse_tracer.create_span(
-                trace=runtime.context.trace,
-                name="document_grading",
-                input_data={
-                    "query": question,
-                    "context_length": len(context) if context else 0,
-                    "has_context": context is not None,
-                    "chunks_received": chunks_preview,
-                },
-                metadata={
-                    "node": "grade_documents",
-                    "model": runtime.context.model_name,
-                },
-            )
-            logger.debug("Created Langfuse span for document grading")
-        except Exception as e:
-            logger.warning(f"Failed to create span for grade_documents node: {e}")
+    # if runtime.context.langfuse_enabled and runtime.context.trace:
+    #     try:
+    #         span = runtime.context.langfuse_tracer.create_span(
+    #             trace=runtime.context.trace,
+    #             name="document_grading",
+    #             input_data={
+    #                 "query": question,
+    #                 "context_length": len(context) if context else 0,
+    #                 "has_context": context is not None,
+    #                 "chunks_received": chunks_preview,
+    #             },
+    #             metadata={
+    #                 "node": "grade_documents",
+    #                 "model": runtime.context.model_name,
+    #             },
+    #         )
+    #         logger.debug("Created Langfuse span for document grading")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to create span for grade_documents node: {e}")
 
     if not context:
         logger.warning("No context found, routing to rewrite_query")
@@ -91,10 +91,6 @@ async def ainvoke_grade_documents_step(
         )
 
         # Get LLM from runtime context
-        # llm = runtime.context.ollama_client.get_langchain_model(
-        #     model=runtime.context.model_name,
-        #     temperature=0.0,
-        # )
         llm = runtime.context.nvidia_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.0,
@@ -106,8 +102,15 @@ async def ainvoke_grade_documents_step(
         # Invoke LLM grading
         logger.info("Invoking LLM for document grading")
         grading_response = await structured_llm.ainvoke(grading_prompt)
-
-        is_relevant = grading_response.binary_score == "yes"
+        
+        if isinstance(grading_response, list):
+            counts = {"yes": 0, "no": 0}
+            for res in grading_response:
+                counts[res.binary_score] += 1
+            logger.info(f"LLM grading: yes={counts['yes']}, no={counts['no']}")
+            is_relevant = "yes" if counts['yes'] >= counts['no'] else "no"
+        else:
+            is_relevant = grading_response.binary_score == "yes"
         score = 1.0 if is_relevant else 0.0
 
         logger.info(f"LLM grading: score={grading_response.binary_score}, reasoning={grading_response.reasoning}")
