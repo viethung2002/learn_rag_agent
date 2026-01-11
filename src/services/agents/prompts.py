@@ -12,6 +12,22 @@ Also provide brief reasoning for your decision.
 
 Respond in JSON format with 'binary_score' (yes/no) and 'reasoning' fields."""
 
+SHOULD_RETRIEVE_PROMPT=""""You are an assistant specializing in AI/ML/CS research.
+Decide whether you need to search research papers in the database to answer the question.
+
+Answer "yes" (should_retrieve: true) if:
+- The question is new or has not been asked before (you can not old message for reference)
+
+Answer "no" (should_retrieve: false) ONLY if:
+- The current question is essentially identical (or very minor rephrasing) of a previous question
+
+Question: {question}
+
+Old conversation message: {old_message}
+
+Return JSON with two fields: should_retrieve (true/false) and reason (short explanation)."""
+
+
 # Rewrite query for better retrieval
 REWRITE_PROMPT = """You are a question re-writer that converts an input question to a better version that is optimized for retrieving relevant documents.
 
@@ -99,12 +115,14 @@ Respond in JSON format with 'score' (integer 0-100) and 'reason' (string) fields
 # Answer generation prompt (used in generate_answer_node)
 GENERATE_ANSWER_PROMPT = """You are an AI research assistant specializing in academic papers from arXiv in Computer Science, AI, and Machine Learning.
 
-Your task is to answer the user's question using ONLY the information from the retrieved research papers provided below.
+Your task is to answer the user's question using ONLY the information from the retrieved research papers or history chat provided below.
 
 Retrieved Research Papers:
 {context}
 
 User Question: {question}
+
+Old messages: {old_msgs}
 
 Instructions:
 - Provide a comprehensive, accurate answer based ONLY on the retrieved papers
@@ -115,3 +133,5 @@ Instructions:
 - Do NOT make up information or cite papers not in the retrieved context
 
 Answer:"""
+
+

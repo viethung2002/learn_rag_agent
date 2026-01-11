@@ -48,24 +48,24 @@ async def ainvoke_rewrite_query_step(
 
     # Create span for query rewriting
     span = None
-    if runtime.context.langfuse_enabled and runtime.context.trace:
-        try:
-            span = runtime.context.langfuse_tracer.create_span(
-                trace=runtime.context.trace,
-                name="query_rewriting",
-                input_data={
-                    "original_query": original_question,
-                    "attempt": current_attempt,
-                },
-                metadata={
-                    "node": "rewrite_query",
-                    "strategy": "llm_based_expansion",
-                    "model": runtime.context.model_name,
-                },
-            )
-            logger.debug("Created Langfuse span for query rewriting")
-        except Exception as e:
-            logger.warning(f"Failed to create span for rewrite_query node: {e}")
+    # if runtime.context.langfuse_enabled and runtime.context.trace:
+    #     try:
+    #         span = runtime.context.langfuse_tracer.create_span(
+    #             trace=runtime.context.trace,
+    #             name="query_rewriting",
+    #             input_data={
+    #                 "original_query": original_question,
+    #                 "attempt": current_attempt,
+    #             },
+    #             metadata={
+    #                 "node": "rewrite_query",
+    #                 "strategy": "llm_based_expansion",
+    #                 "model": runtime.context.model_name,
+    #             },
+    #         )
+    #         logger.debug("Created Langfuse span for query rewriting")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to create span for rewrite_query node: {e}")
 
     # Use LLM to rewrite the query intelligently
     try:

@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import InMemorySaver
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
@@ -23,10 +24,17 @@ from .nodes import (
     ainvoke_retrieve_step,
     ainvoke_rewrite_query_step,
     continue_after_guardrail,
+    ainvoke_should_retrieve_step,
+    route_after_should_retrieve,
+    
 )
 from .state import AgentState
 from .tools import create_retriever_tool
-
+logging.basicConfig(
+    filename="app.log",      # file txt
+    level=logging.INFO,      # mức log
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -131,8 +139,8 @@ class AgenticRAGService:
         workflow.add_node("grade_documents", ainvoke_grade_documents_step)
         workflow.add_node("rewrite_query", ainvoke_rewrite_query_step)
         workflow.add_node("generate_answer", ainvoke_generate_answer_step)
-
-        # Add edges
+        workflow.add_node("should_retrieve", ainvoke_should_retrieve_step)
+                # Add edges
         logger.info("Configuring graph edges and routing logic")
 
         # Start → guardrail validation
@@ -143,21 +151,28 @@ class AgenticRAGService:
             "guardrail",
             continue_after_guardrail,
             {
-                "continue": "retrieve",
+                "continue": "should_retrieve",
                 "out_of_scope": "out_of_scope",
             },
         )
-
+        workflow.add_conditional_edges(
+            "should_retrieve",
+            route_after_should_retrieve,
+            {
+                "generate_answer": "generate_answer",
+                "retrieve": "retrieve",
+            },
+        )
         # Out of scope → END
         workflow.add_edge("out_of_scope", END)
 
         # Retrieve node creates tool call
         workflow.add_conditional_edges(
             "retrieve",
-            tools_condition,
+            tools_condition,  # Nếu có tool_calls → "tools", không có → END
             {
                 "tools": "tool_retrieve",
-                END: END,
+                END: "generate_answer",  # QUAN TRỌNG: Khi skip retrieve → đi thẳng generate_answer
             },
         )
 
@@ -182,7 +197,8 @@ class AgenticRAGService:
 
         # Compile graph
         logger.info("Compiling LangGraph workflow")
-        compiled_graph = workflow.compile()
+        checkpointer = InMemorySaver()
+        compiled_graph = workflow.compile(checkpointer=checkpointer)
         logger.info("✓ Graph compilation successful")
 
         return compiled_graph
@@ -192,6 +208,7 @@ class AgenticRAGService:
         query: str,
         user_id: str = "api_user",
         model: Optional[str] = None,
+        thread_id: Optional[str] = "1",
     ) -> dict:
         """Ask a question using agentic RAG.
 
@@ -243,9 +260,9 @@ class AgenticRAGService:
                         session_id=f"session_{user_id}",
                     )
                     logger.debug(f"Trace created: {trace_obj}")
-                    return await self._run_workflow(query, model_to_use, user_id, trace_obj)
+                    return await self._run_workflow(query, model_to_use, user_id, trace_obj, thread_id)
             else:
-                return await self._run_workflow(query, model_to_use, user_id, None)
+                return await self._run_workflow(query, model_to_use, user_id, None, thread_id)
 
         try:
             return await _execute_with_trace()
@@ -254,7 +271,7 @@ class AgenticRAGService:
             logger.exception("Full traceback:")
             raise
 
-    async def _run_workflow(self, query: str, model_to_use: str, user_id: str, trace) -> dict:
+    async def _run_workflow(self, query: str, model_to_use: str, user_id: str, trace, thread_id) -> dict:
         """Execute the workflow with the given trace context."""
         try:
             start_time = time.time()
@@ -291,9 +308,11 @@ class AgenticRAGService:
                 max_retrieval_attempts=self.graph_config.max_retrieval_attempts,
                 guardrail_threshold=self.graph_config.guardrail_threshold,
             )
+            
+            config = {
+                "configurable": {"thread_id": thread_id},
+            }
 
-            # Create config with CallbackHandler if Langfuse is enabled (v3 SDK)
-            config = {"thread_id": f"user_{user_id}_session_{int(time.time())}"}
 
             # Add CallbackHandler for automatic LLM tracing
             # IMPORTANT: CallbackHandler automatically inherits the current span context
@@ -303,7 +322,11 @@ class AgenticRAGService:
                     # V3 SDK: CallbackHandler() automatically uses current trace context
                     # No need to pass trace explicitly - it's handled by context propagation
                     callback_handler = CallbackHandler()
-                    config["callbacks"] = [callback_handler]
+                    # config["callbacks"] = [callback_handler]
+                    config = {
+                        "configurable": {"thread_id": thread_id},
+                        "callbacks": [callback_handler]
+                    }
                     logger.info("✓ CallbackHandler added (will auto-link to current trace)")
                 except Exception as e:
                     logger.warning(f"Failed to create CallbackHandler: {e}")
@@ -313,6 +336,7 @@ class AgenticRAGService:
                 config=config,
                 context=runtime_context,
             )
+
             
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")
