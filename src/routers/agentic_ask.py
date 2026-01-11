@@ -40,6 +40,7 @@ async def ask_agentic(
         result = await agentic_rag.ask(
             query=request.query,
             model=request.model,
+            thread_id=request.thread_id,
         )
 
         return AgenticAskResponse(
