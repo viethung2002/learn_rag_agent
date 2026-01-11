@@ -24,6 +24,9 @@ from .nodes import (
     ainvoke_retrieve_step,
     ainvoke_rewrite_query_step,
     continue_after_guardrail,
+    ainvoke_should_retrieve_step,
+    route_after_should_retrieve,
+    
 )
 from .state import AgentState
 from .tools import create_retriever_tool
@@ -136,8 +139,8 @@ class AgenticRAGService:
         workflow.add_node("grade_documents", ainvoke_grade_documents_step)
         workflow.add_node("rewrite_query", ainvoke_rewrite_query_step)
         workflow.add_node("generate_answer", ainvoke_generate_answer_step)
-
-        # Add edges
+        workflow.add_node("should_retrieve", ainvoke_should_retrieve_step)
+                # Add edges
         logger.info("Configuring graph edges and routing logic")
 
         # Start → guardrail validation
@@ -148,21 +151,28 @@ class AgenticRAGService:
             "guardrail",
             continue_after_guardrail,
             {
-                "continue": "retrieve",
+                "continue": "should_retrieve",
                 "out_of_scope": "out_of_scope",
             },
         )
-
+        workflow.add_conditional_edges(
+            "should_retrieve",
+            route_after_should_retrieve,
+            {
+                "generate_answer": "generate_answer",
+                "retrieve": "retrieve",
+            },
+        )
         # Out of scope → END
         workflow.add_edge("out_of_scope", END)
 
         # Retrieve node creates tool call
         workflow.add_conditional_edges(
             "retrieve",
-            tools_condition,
+            tools_condition,  # Nếu có tool_calls → "tools", không có → END
             {
                 "tools": "tool_retrieve",
-                END: END,
+                END: "generate_answer",  # QUAN TRỌNG: Khi skip retrieve → đi thẳng generate_answer
             },
         )
 
@@ -273,10 +283,7 @@ class AgenticRAGService:
             logger.info("Invoking LangGraph workflow")
             
             # Create config with CallbackHandler if Langfuse is enabled (v3 SDK)
-            config = {
-                # "thread_id": f"user_{user_id}_session_{int(time.time())}",
-                "configurable": {"thread_id": "1"}
-            }
+
 
 
             # State initialization
@@ -319,7 +326,11 @@ class AgenticRAGService:
                     # V3 SDK: CallbackHandler() automatically uses current trace context
                     # No need to pass trace explicitly - it's handled by context propagation
                     callback_handler = CallbackHandler()
-                    config["callbacks"] = [callback_handler]
+                    config = {
+                        # "thread_id": f"user_{user_id}_session_{int(time.time())}",
+                        "configurable": {"thread_id": "1"},
+                        "callbacks": [callback_handler]
+                    }
                     logger.info("✓ CallbackHandler added (will auto-link to current trace)")
                 except Exception as e:
                     logger.warning(f"Failed to create CallbackHandler: {e}")
