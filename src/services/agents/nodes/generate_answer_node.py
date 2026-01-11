@@ -12,7 +12,7 @@ from langchain_core.messages.utils import (
 from ..context import Context
 from ..prompts import GENERATE_ANSWER_PROMPT
 from ..state import AgentState
-from .utils import get_latest_context, get_latest_query
+from .utils import get_latest_context, get_latest_query, get_old_message
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +77,6 @@ async def ainvoke_generate_answer_step(
     #         logger.warning(f"Failed to create span for generate_answer node: {e}")
 
     try:
-        # Create answer generation prompt from template
-        answer_prompt = GENERATE_ANSWER_PROMPT.format(
-            context=context,
-            question=question,
-        )
-        
         messages = trim_messages(  
             state["messages"],
             strategy="last",
@@ -91,15 +85,15 @@ async def ainvoke_generate_answer_step(
             start_on="human",
             end_on=("human", "tool"),
         )
-        messages.append(AIMessage(content=answer_prompt))
-        state["messages"] = messages
-        logger.warning(f"MESSAGES HAI: {messages}")
-
-        # Get LLM from runtime context
-        # llm = runtime.context.ollama_client.get_langchain_model(
-        #     model=runtime.context.model_name,
-        #     temperature=runtime.context.temperature,
-        # )
+        
+        old_msgs = get_old_message(messages)
+        # Create answer generation prompt from template
+        answer_prompt = GENERATE_ANSWER_PROMPT.format(
+            context=context,
+            question=question,
+            old_msgs=old_msgs
+        )
+        
         llm = runtime.context.nvidia_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=runtime.context.temperature,
@@ -107,7 +101,7 @@ async def ainvoke_generate_answer_step(
 
         # Invoke LLM for answer generation
         logger.info("Invoking LLM for answer generation")
-        response = await llm.ainvoke(messages)
+        response = await llm.ainvoke(answer_prompt)
 
         # Extract content from response
         answer = response.content if hasattr(response, 'content') else str(response)

@@ -12,8 +12,7 @@ Also provide brief reasoning for your decision.
 
 Respond in JSON format with 'binary_score' (yes/no) and 'reasoning' fields."""
 
-SHOULD_RETRIEVE_PROMPT=""""
-You are an assistant specializing in AI/ML/CS research.
+SHOULD_RETRIEVE_PROMPT=""""You are an assistant specializing in AI/ML/CS research.
 Decide whether you need to search research papers in the database to answer the question.
 
 Answer "yes" (should_retrieve: true) if:
@@ -116,12 +115,14 @@ Respond in JSON format with 'score' (integer 0-100) and 'reason' (string) fields
 # Answer generation prompt (used in generate_answer_node)
 GENERATE_ANSWER_PROMPT = """You are an AI research assistant specializing in academic papers from arXiv in Computer Science, AI, and Machine Learning.
 
-Your task is to answer the user's question using ONLY the information from the retrieved research papers provided below.
+Your task is to answer the user's question using ONLY the information from the retrieved research papers or history chat provided below.
 
 Retrieved Research Papers:
 {context}
 
 User Question: {question}
+
+Old messages: {old_msgs}
 
 Instructions:
 - Provide a comprehensive, accurate answer based ONLY on the retrieved papers
