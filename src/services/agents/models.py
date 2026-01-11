@@ -106,3 +106,8 @@ class ReasoningStep(BaseModel):
     step_name: str = Field(description="Name of the reasoning step")
     description: str = Field(description="Human-readable description")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Step metadata")
+
+
+class ShouldRetrieveDecision(BaseModel):
+    should_retrieve: bool = Field(description="True if need to search papers, False if can answer directly")
+    reason: str = Field(description="Brief explanation for the decision")
