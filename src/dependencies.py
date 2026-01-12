@@ -96,6 +96,10 @@ def get_telegram_service(request: Request) -> Optional[TelegramBot]:
     return getattr(request.app.state, "telegram_service", None)
 
 
+def get_agentic_rag_service(request: Request) -> AgenticRAGService:
+    return request.app.state.agentic_rag
+
+
 # Dependency annotations
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DatabaseDep = Annotated[BaseDatabase, Depends(get_database)]
@@ -110,31 +114,4 @@ NvidiaDep = Annotated[NvidiaClient, Depends(get_nvidia_client)]
 LangfuseDep = Annotated[LangfuseTracer, Depends(get_langfuse_tracer)]
 CacheDep = Annotated[CacheClient | None, Depends(get_cache_client)]
 TelegramDep = Annotated[Optional[TelegramBot], Depends(get_telegram_service)]
-
-
-# def get_agentic_rag_service(
-#     opensearch: OpenSearchDep,
-#     # ollama: OllamaDep,
-#     nvidia: NvidiaDep,
-#     embeddings: EmbeddingsDep,
-#     langfuse: LangfuseDep,
-#     settings: Annotated[Settings, Depends(get_settings)],
-# ) -> AgenticRAGService:
-#     """Get agentic RAG service."""
-#     return make_agentic_rag_service(
-#         opensearch_client=opensearch,
-#         # ollama_client=ollama,
-#         nvidia_client=nvidia,
-#         embeddings_client=embeddings,
-#         langfuse_tracer=langfuse,
-#         # model=settings.ollama_model,
-#         # model=settings.nvidia_model,
-#     )
-
-
-
-def get_agentic_rag_service(request: Request) -> AgenticRAGService:
-    return request.app.state.agentic_rag
-
-
 AgenticRAGDep = Annotated[AgenticRAGService, Depends(get_agentic_rag_service)]

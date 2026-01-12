@@ -2,7 +2,6 @@ from typing import Optional
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
-# from src.services.ollama.client import OllamaClient
 from src.services.nvidia.client import NvidiaClient
 from src.services.opensearch.client import OpenSearchClient
 
@@ -12,7 +11,6 @@ from .config import GraphConfig
 
 def make_agentic_rag_service(
     opensearch_client: OpenSearchClient,
-    # ollama_client: OllamaClient,
     nvidia_client: NvidiaClient,
     embeddings_client: JinaEmbeddingsClient,
     langfuse_tracer: Optional[LangfuseTracer] = None,
@@ -41,7 +39,6 @@ def make_agentic_rag_service(
 
     return AgenticRAGService(
         opensearch_client=opensearch_client,
-        # ollama_client=ollama_client,
         nvidia_client=nvidia_client,
         embeddings_client=embeddings_client,
         langfuse_tracer=langfuse_tracer,
