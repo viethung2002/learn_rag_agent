@@ -1,14 +1,18 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
-from src.dependencies import AgenticRAGDep, LangfuseDep
+from src.dependencies import AgenticRAGDep, LangfuseDep, CacheDep
 from src.schemas.api.ask import AgenticAskResponse, AskRequest, FeedbackRequest, FeedbackResponse
 
 router = APIRouter(prefix="/api/v1", tags=["agentic-rag"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/ask-agentic", response_model=AgenticAskResponse)
 async def ask_agentic(
     request: AskRequest,
     agentic_rag: AgenticRAGDep,
+    cache_client: CacheDep,
 ) -> AgenticAskResponse:
     """
     Agentic RAG endpoint with intelligent retrieval and query refinement.
@@ -37,13 +41,23 @@ async def ask_agentic(
         HTTPException: If processing fails
     """
     try:
+        cached_response = None
+        if cache_client:
+            try:
+                cached_response = await cache_client.find_cached_response(request)
+                if cached_response:
+                    logger.info("Returning cached response for exact query match")
+                    return cached_response
+            except Exception as e:
+                logger.warning(f"Cache check failed, proceeding with normal flow: {e}")
+        
         result = await agentic_rag.ask(
             query=request.query,
             model=request.model,
             thread_id=request.thread_id,
         )
 
-        return AgenticAskResponse(
+        response = AgenticAskResponse(
             query=result["query"],
             answer=result["answer"],
             sources=result.get("sources", []),
@@ -53,6 +67,16 @@ async def ask_agentic(
             retrieval_attempts=result.get("retrieval_attempts", 0),
             trace_id=result.get("trace_id"),
         )
+        
+        # Store response in exact match cache
+        if cache_client:
+            try:
+                await cache_client.store_response(request, response)
+            except Exception as e:
+                logger.warning(f"Failed to store response in cache: {e}")
+        
+        return response
+
 
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
