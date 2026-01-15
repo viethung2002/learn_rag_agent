@@ -55,9 +55,7 @@ class NvidiaClient:
         reranker = NVIDIARerank(
             nvidia_api_key=self.api_key,
             model=model,
-            top_n=top_n,
-            # Nếu dùng NIM local thì thêm: base_url=self.base_url
-            # timeout=self.timeout nếu cần
+            top_n=top_n
         )
         logger.info(f"Reranker initialized with model: {model}, top_n: {top_n}")
         return reranker
