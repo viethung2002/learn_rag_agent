@@ -291,7 +291,7 @@ class MetadataFetcher:
                     logger.warning(f"PDF parsing failed for {paper.arxiv_id}, continuing with metadata only")
 
         except Exception as e:
-            logger.error(f"Pipeline error for {paper.arxiv_id}: {e}")
+            logger.error(f"Pipeline error for {paper.arxiv_id}: {e}", exc_info=True)
             raise MetadataFetchingException(f"Pipeline error for {paper.arxiv_id}: {e}") from e
 
         return (download_success, parsed_paper)
