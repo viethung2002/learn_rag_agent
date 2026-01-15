@@ -4,6 +4,7 @@ from typing import Dict,List, Any
 
 from langgraph.runtime import Runtime
 from langchain_core.documents import Document
+from langchain_core.messages import ToolMessage
 
 from ..context import Context
 from ..models import GradeDocuments, GradingResult
@@ -59,14 +60,17 @@ async def ainvoke_rerank_documents_step(
             logger.info(f"Max relevance score sau rerank: {max(scores):.3f}")
 
         # Quyết định routing cơ bản (có thể tinh chỉnh sau)
-        has_good_docs = any(s >= 1.0 for s in scores) if scores else False
-        routing = "generate_answer" if has_good_docs else "rewrite_query"
+        # has_good_docs = any(s >= 1.0 for s in scores) if scores else False
+        # routing = "generate_answer" if has_good_docs else "rewrite_query"
+        
+        filter_top2_docs = reranked_docs[:2]
+        state["messages"].append(ToolMessage(content=filter_top2_docs, tool_call_id='Rerank'))
     
         return {
-            "reranked_docs": reranked_docs,          # List[Document] đã rerank
-            "retrieved_docs": reranked_docs,         # cập nhật lại field này cho node sau dùng
+            "reranked_docs": filter_top2_docs,          # List[Document] đã rerank
+            "retrieved_docs": filter_top2_docs,         # cập nhật lại field này cho node sau dùng
             "rerank_scores": scores,
-            "routing_decision": routing
+            # "routing_decision": routing
         }
 
     except Exception as e:
@@ -76,5 +80,5 @@ async def ainvoke_rerank_documents_step(
             "reranked_docs": documents,
             "retrieved_docs": documents,
             "rerank_scores": [0.0] * len(documents),
-            "routing_decision": "grade_documents"  # hoặc generate_answer
+            # "routing_decision": "grade_documents"  # hoặc generate_answer
         }

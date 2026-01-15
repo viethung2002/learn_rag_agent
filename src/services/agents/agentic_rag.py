@@ -125,11 +125,7 @@ class AgenticRAGService:
                     for obs in observations
                 ]
                 
-                result.append(ToolMessage(
-                    content="Retrieved documents",  # có thể giữ nguyên hoặc serialize nếu cần
-                    tool_call_id=tool_call["id"]
-                ))
-            
+                # result.append(ToolMessage(content=observations, tool_call_id=tool_call["id"]))
             return {
                 "messages": result,
                 "relevant_sources": relevant_sources,
