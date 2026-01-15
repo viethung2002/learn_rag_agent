@@ -111,3 +111,28 @@ class ReasoningStep(BaseModel):
 class ShouldRetrieveDecision(BaseModel):
     should_retrieve: bool = Field(description="True if need to search papers, False if can answer directly")
     reason: str = Field(description="Brief explanation for the decision")
+    confidence: float = Field(default=1.0, description="Confidence score for the decision between 0.0 and 1.0")
+
+
+class Documents(BaseModel):
+    """A document retrieved from the knowledge base.
+
+    :param document_id: Unique identifier for the document
+    :param content: The main content/text of the document
+    :param metadata: Additional metadata about the document
+    """
+
+    document_id: str = Field(description="Unique document identifier")
+    content: str = Field(description="Main content of the document")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional document metadata")
+
+
+class RerankResult(BaseModel):
+    """Result of reranking a document.
+    :param document_id: Identifier of the document
+    :param score: Relevance score from reranker model (higher is better)
+    :param is_relevant: True if score >= threshold
+    """
+    document_id: str
+    score: float = Field(description="Relevance score from reranker model (higher is better)")
+    is_relevant: bool = Field(description="True if score >= threshold")

@@ -35,7 +35,7 @@ class PDFParserService:
                 logger.info(f"Parsed {pdf_path.name}")
                 return result
             else:
-                logger.error(f"Docling parsing returned no result for {pdf_path.name}")
+                logger.error(f"Docling parsing returned no result for {pdf_path.name}", exc_info=True)
                 raise PDFParsingException(f"Docling parsing returned no result for {pdf_path.name}")
 
         except (PDFValidationError, PDFParsingException):

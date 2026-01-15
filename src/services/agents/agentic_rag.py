@@ -7,6 +7,7 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
@@ -25,6 +26,7 @@ from .nodes import (
     continue_after_guardrail,
     ainvoke_should_retrieve_step,
     route_after_should_retrieve,
+    ainvoke_rerank_documents_step
     
 )
 from .state import AgentState
@@ -106,24 +108,32 @@ class AgenticRAGService:
         async def tool_node(state: dict):
             """Performs the tool call"""
             result = []
+            relevant_sources = []
+            
             for tool_call in state["messages"][-1].tool_calls:
                 tool = tools_by_name[tool_call["name"]]
-                observations = await tool.ainvoke(tool_call["args"])
+                observations = await tool.ainvoke(tool_call["args"])  # List[Document]
+                
                 relevant_sources = [
                     {
-                        "arxiv_id": observation.metadata.get("arxiv_id"),
-                        "title": observation.metadata.get("title"),
-                        "authors": observation.metadata.get("authors"),
-                        "url": observation.metadata.get("source"),
-                        "relevance_score": observation.metadata.get("top_k"),
+                        "arxiv_id": obs.metadata.get("arxiv_id"),
+                        "title": obs.metadata.get("title"),
+                        "authors": obs.metadata.get("authors"),
+                        "url": obs.metadata.get("source"),
+                        "relevance_score": obs.metadata.get("top_k"),
                     }
-                    for observation in observations
+                    for obs in observations
                 ]
                 
-                result.append(ToolMessage(content=observations, tool_call_id=tool_call["id"]))
+                result.append(ToolMessage(
+                    content="Retrieved documents",  # có thể giữ nguyên hoặc serialize nếu cần
+                    tool_call_id=tool_call["id"]
+                ))
+            
             return {
                 "messages": result,
-                "relevant_sources": relevant_sources
+                "relevant_sources": relevant_sources,
+                "retrieved_docs": observations      # ← THÊM FIELD NÀY (List[Document])
             }
 
         # Add nodes (just function references - no closures needed!)
@@ -137,6 +147,7 @@ class AgenticRAGService:
         workflow.add_node("rewrite_query", ainvoke_rewrite_query_step)
         workflow.add_node("generate_answer", ainvoke_generate_answer_step)
         workflow.add_node("should_retrieve", ainvoke_should_retrieve_step)
+        workflow.add_node("rerank", ainvoke_rerank_documents_step)
                 # Add edges
         logger.info("Configuring graph edges and routing logic")
 
@@ -174,7 +185,8 @@ class AgenticRAGService:
         )
 
         # After tool retrieval → grade documents
-        workflow.add_edge("tool_retrieve", "grade_documents")
+        workflow.add_edge("tool_retrieve", "rerank")
+        workflow.add_edge("rerank", "grade_documents")
 
         # After grading → route based on relevance
         workflow.add_conditional_edges(
@@ -334,7 +346,21 @@ class AgenticRAGService:
                 context=runtime_context,
             )
 
-            
+            if "__interrupt__" in result:
+                interrupt_payload = result["__interrupt__"][0].value
+
+                logger.info(
+                    f"HITL triggered: type={interrupt_payload.get('type')}, "
+                    f"confidence={interrupt_payload.get('confidence')}"
+                )
+
+                return {
+                    "status": "need_human_review",
+                    "data": interrupt_payload,
+                    "thread_id": thread_id,
+                    "trace_id": self.langfuse_tracer.get_trace_id()
+                    if self.langfuse_tracer else None,
+                }
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")
 
