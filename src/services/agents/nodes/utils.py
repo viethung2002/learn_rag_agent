@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from ..models import ReasoningStep, SourceItem, ToolArtefact
+from ..models import ReasoningStep, SourceItem, ToolArtefact, Documents
 
 logger = logging.getLogger(__name__)
 
