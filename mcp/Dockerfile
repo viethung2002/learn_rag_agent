@@ -1,8 +1,9 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm AS base
+FROM python:3.12-slim
 
-WORKDIR /app
+WORKDIR /app/mcp
 
-# Copy configuration files
+RUN pip install --no-cache-dir uv
+
 COPY pyproject.toml uv.lock ./
 
 # UV_COMPILE_BYTECODE for generating .pyc files -> faster application startup.
@@ -16,25 +17,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=/app/pyproject.toml \
     uv sync --frozen --no-dev
 
-# Copy source code
-COPY src /app/src
-
-FROM python:3.12.8-slim AS final
-
-EXPOSE 8000
-
 # PYTHONUNBUFFERED=1 to disable output buffering
 ENV PYTHONUNBUFFERED=1
 ARG VERSION=0.1.0
 ENV APP_VERSION=$VERSION
 
-WORKDIR /app
+ENV PATH="/app/mcp/.venv/bin:$PATH"
 
-# Copy the virtual environment from the base stage
-COPY --from=base /app /app
+EXPOSE 8100
 
-# Add virtual environment to PATH
-ENV PATH="/app/.venv/bin:$PATH"
+WORKDIR /app/mcp/src 
 
-# Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"] 
+CMD ["python", "mcp_server.py"]

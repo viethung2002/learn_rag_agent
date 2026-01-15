@@ -139,3 +139,12 @@ async def submit_feedback(
             status_code=500,
             detail=f"Error submitting feedback: {str(e)}"
         )
+
+
+@router.post("/human-review/should-retrieve")
+async def human_review_should_retrieve(
+):
+    """
+    Human-in-the-loop review for should_retrieve decision
+    """
+

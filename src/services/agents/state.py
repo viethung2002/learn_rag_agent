@@ -1,9 +1,10 @@
 from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
+
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
-from .models import GradingResult, GuardrailScoring, RoutingDecision, SourceItem, ToolArtefact, ShouldRetrieveDecision
+from .models import GradingResult, GuardrailScoring, RoutingDecision, SourceItem, ToolArtefact, ShouldRetrieveDecision, Documents
 
 
 class AgentState(TypedDict):
@@ -73,3 +74,5 @@ class AgentState(TypedDict):
     grading_results: List[GradingResult]
     metadata: Dict[str, Any]
     should_retrieve_result: Optional[ShouldRetrieveDecision]
+    retrieved_docs: List[Documents]
+    
