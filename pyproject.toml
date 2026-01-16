@@ -30,6 +30,8 @@ dependencies = [
     "langchain-core>=0.3.0",
     "langchain-community>=0.3.0",
     "fastmcp>=2.14.3",
+    "langchain-mcp-adapters>=0.2.1",
+    "langchain-tavily>=0.2.16",
 ]
 readme = "README.md"
 

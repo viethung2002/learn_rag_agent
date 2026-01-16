@@ -1,5 +1,6 @@
 import logging
 import time
+import json
 from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, ToolMessage
@@ -8,6 +9,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import interrupt
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.runtime import Runtime
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
@@ -56,6 +60,7 @@ class AgenticRAGService:
         embeddings_client: JinaEmbeddingsClient,
         langfuse_tracer: Optional[LangfuseTracer] = None,
         graph_config: Optional[GraphConfig] = None,
+        mcp_client: Optional[MultiServerMCPClient] = None,
     ):
         """Initialize agentic RAG service.
 
@@ -71,7 +76,20 @@ class AgenticRAGService:
         self.embeddings = embeddings_client
         self.langfuse_tracer = langfuse_tracer
         self.graph_config = graph_config or GraphConfig()
+        # MCP client for tool execution
+        if mcp_client is None:
+            self.mcp_client = MultiServerMCPClient({
+                "arxiv-tools": {
+                    "transport": "http",           
+                    "url": "http://fast-mcp-server:8100/mcp",
+                },
+            })
+        else:
+            self.mcp_client = mcp_client
 
+
+        self.graph = self._build_graph()
+        logger.info("✓ AgenticRAGService initialized successfully")
         logger.info("Initializing AgenticRAGService with configuration:")
         logger.info(f"  Model: {self.graph_config.model}")
         logger.info(f"  Top-k: {self.graph_config.top_k}")
@@ -105,22 +123,24 @@ class AgenticRAGService:
         )
         tools = [retriever_tool]
         tools_by_name = {tool.name: tool for tool in tools}
-        async def tool_node(state: dict):
-            """Performs the tool call"""
+        self.tools_by_name = tools_by_name
+        async def tool_node(state: dict, runtime: Runtime[Context]):
+            tool_calls = state["messages"][-1].tool_calls
             result = []
-            relevant_sources = []
-            
-            for tool_call in state["messages"][-1].tool_calls:
-                tool = tools_by_name[tool_call["name"]]
-                observations = await tool.ainvoke(tool_call["args"])  # List[Document]
-                
+
+            for call in tool_calls:
+                tool = runtime.context.tools_by_name[call["name"]]
+                observations = await tool.ainvoke(call["args"])
+                observations = observations[0]['text']
+                observations = json.loads(observations)
+
                 relevant_sources = [
                     {
-                        "arxiv_id": obs.metadata.get("arxiv_id"),
-                        "title": obs.metadata.get("title"),
-                        "authors": obs.metadata.get("authors"),
-                        "url": obs.metadata.get("source"),
-                        "relevance_score": obs.metadata.get("top_k"),
+                        "arxiv_id": obs['metadata'].get("arxiv_id"),
+                        "title": obs['metadata'].get("title"),
+                        "authors": obs['metadata'].get("authors"),
+                        "url": obs['metadata'].get("source"),
+                        "relevance_score": obs['metadata'].get("top_k"),
                     }
                     for obs in observations
                 ]
@@ -270,7 +290,12 @@ class AgenticRAGService:
                 return await self._run_workflow(query, model_to_use, user_id, None, thread_id)
 
         try:
-            return await _execute_with_trace()
+            async with self.mcp_client.session("arxiv-tools") as session:
+                tools = await load_mcp_tools(session)
+                self.tools_by_name = {'retrieve_papers': tool for tool in tools}
+
+                return await _execute_with_trace()
+
         except Exception as e:
             logger.error(f"Error in Agentic RAG execution: {str(e)}")
             logger.exception("Full traceback:")
@@ -312,6 +337,7 @@ class AgenticRAGService:
                 top_k=self.graph_config.top_k,
                 max_retrieval_attempts=self.graph_config.max_retrieval_attempts,
                 guardrail_threshold=self.graph_config.guardrail_threshold,
+                tools_by_name=self.tools_by_name,
             )
             
             config = {
@@ -342,21 +368,6 @@ class AgenticRAGService:
                 context=runtime_context,
             )
 
-            if "__interrupt__" in result:
-                interrupt_payload = result["__interrupt__"][0].value
-
-                logger.info(
-                    f"HITL triggered: type={interrupt_payload.get('type')}, "
-                    f"confidence={interrupt_payload.get('confidence')}"
-                )
-
-                return {
-                    "status": "need_human_review",
-                    "data": interrupt_payload,
-                    "thread_id": thread_id,
-                    "trace_id": self.langfuse_tracer.get_trace_id()
-                    if self.langfuse_tracer else None,
-                }
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")
 

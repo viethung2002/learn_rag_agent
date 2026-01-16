@@ -26,13 +26,14 @@ async def ainvoke_rerank_documents_step(
     """
     logger.info("NODE: rerank")
 
-    documents = state["retrieved_docs"]
-    logger.info(f"Số documents nhận được để rerank: {len(documents)}")
+    documents_dict = state["retrieved_docs"]
+    documents=[Document(page_content=doc['page_content'], metadata=doc['metadata']) for doc in documents_dict]
+    logger.info(f"Number of documents: {len(documents)}")
     if not documents:
         logger.warning("Không có documents để rerank")
         return {
             "reranked_docs": [],
-            "routing_decision": "grade_documents"  # hoặc generate_answer tùy logic
+            "routing_decision": "grade_documents" 
         }
 
     question = get_latest_query(state["messages"])
@@ -75,10 +76,8 @@ async def ainvoke_rerank_documents_step(
 
     except Exception as e:
         logger.error(f"Rerank thất bại: {str(e)}", exc_info=True)
-        # Fallback: dùng nguyên documents gốc
         return {
             "reranked_docs": documents,
             "retrieved_docs": documents,
             "rerank_scores": [0.0] * len(documents),
-            # "routing_decision": "grade_documents"  # hoặc generate_answer
         }
