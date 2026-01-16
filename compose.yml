@@ -36,13 +36,11 @@ services:
 
   fast-mcp-server:
     build:
-      context: ./mcp
+      context: ./src/mcp
       dockerfile: Dockerfile
     container_name: fast-mcp-server
     volumes:
-      - ./mcp/src:/app/mcp/src
-    depends_on:
-      - api
+      - ./src:/app/mcp/src
     ports:
       - "8100:8100"
     networks:
