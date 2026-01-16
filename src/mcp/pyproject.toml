@@ -9,5 +9,6 @@ dependencies = [
     "uvicorn>=0.34.2",
     "fastmcp>=2.14.3",
     "opensearch-py>=3.0.0",
-    "pydantic>=2.11.3"
+    "pydantic>=2.11.3",
+    "langchain-core>=0.3.0",
 ]

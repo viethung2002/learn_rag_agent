@@ -39,6 +39,8 @@ services:
       context: ./src/mcp
       dockerfile: Dockerfile
     container_name: fast-mcp-server
+    env_file:
+      - .env
     volumes:
       - ./src:/app/mcp/src
     ports:
