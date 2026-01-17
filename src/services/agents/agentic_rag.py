@@ -34,7 +34,7 @@ from .nodes import (
     
 )
 from .state import AgentState
-from .tools import create_retriever_tool
+
 logging.basicConfig(
     filename="app.log",      # file txt
     level=logging.INFO,      # mức log
@@ -115,15 +115,6 @@ class AgenticRAGService:
         workflow = StateGraph(AgentState, context_schema=Context)
 
         # Create tools (these still need to be created upfront for ToolNode)
-        retriever_tool = create_retriever_tool(
-            opensearch_client=self.opensearch,
-            embeddings_client=self.embeddings,
-            top_k=self.graph_config.top_k,
-            use_hybrid=self.graph_config.use_hybrid,
-        )
-        tools = [retriever_tool]
-        tools_by_name = {tool.name: tool for tool in tools}
-        self.tools_by_name = tools_by_name
         async def tool_node(state: dict, runtime: Runtime[Context]):
             tool_calls = state["messages"][-1].tool_calls
             result = []
@@ -292,7 +283,7 @@ class AgenticRAGService:
         try:
             async with self.mcp_client.session("arxiv-tools") as session:
                 tools = await load_mcp_tools(session)
-                self.tools_by_name = {'retrieve_papers': tool for tool in tools}
+                self.tools_by_name = {tool.name: tool for tool in tools}
 
                 return await _execute_with_trace()
 
