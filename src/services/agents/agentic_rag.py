@@ -31,7 +31,6 @@ from .nodes import (
     ainvoke_should_retrieve_step,
     route_after_should_retrieve,
     ainvoke_rerank_documents_step
-    
 )
 from .state import AgentState
 
@@ -155,7 +154,8 @@ class AgenticRAGService:
         workflow.add_node("generate_answer", ainvoke_generate_answer_step)
         workflow.add_node("should_retrieve", ainvoke_should_retrieve_step)
         workflow.add_node("rerank", ainvoke_rerank_documents_step)
-                # Add edges
+        
+        # Add edges
         logger.info("Configuring graph edges and routing logic")
 
         # Start → guardrail validation
@@ -358,7 +358,7 @@ class AgenticRAGService:
                 config=config,
                 context=runtime_context,
             )
-
+            
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")
 
