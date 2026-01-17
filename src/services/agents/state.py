@@ -75,4 +75,3 @@ class AgentState(TypedDict):
     metadata: Dict[str, Any]
     should_retrieve_result: Optional[ShouldRetrieveDecision]
     retrieved_docs: List[Documents]
-    

@@ -1,22 +1,102 @@
-from langchain_nvidia_ai_endpoints import NVIDIARerank
-from langchain_core.documents import Document
+api_key = ''
 
-query = "What is the GPU memory bandwidth of H100 SXM?"
-passages = [
-    "The Hopper GPU is paired with the Grace CPU using NVIDIA's ultra-fast chip-to-chip interconnect, delivering 900GB/s of bandwidth, 7X faster than PCIe Gen5. This innovative design will deliver up to 30X higher aggregate system memory bandwidth to the GPU compared to today's fastest servers and up to 10X higher performance for applications running terabytes of data.", 
-    "A100 provides up to 20X higher performance over the prior generation and can be partitioned into seven GPU instances to dynamically adjust to shifting demands. The A100 80GB debuts the world's fastest memory bandwidth at over 2 terabytes per second (TB/s) to run the largest models and datasets.", 
-    "Accelerated servers with H100 deliver the compute power—along with 3 terabytes per second (TB/s) of memory bandwidth per GPU and scalability with NVLink and NVSwitch™.", 
-]
+from typing import TypedDict, List
 
-client = NVIDIARerank(
-  model="nvidia/llama-3.2-nv-rerankqa-1b-v2", 
-  api_key="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",
+from langchain_core.messages import (
+    BaseMessage,
+    HumanMessage,
+    AIMessage,
+)
+from langchain_core.messages.utils import (
+    trim_messages,
+    count_tokens_approximately,
+)
+from langgraph.graph.message import add_messages
+from langgraph.graph import StateGraph, START
+from langgraph.checkpoint.memory import InMemorySaver
+
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from typing import TypedDict, Annotated, List
+# =========================
+# 1. Initialize LLM
+# =========================
+model = ChatNVIDIA(
+    nvidia_api_key=api_key,
+    model="nvidia/nemotron-3-nano-30b-a3b",
+    temperature=0.7,
+    top_p=0.9,
+    max_completion_tokens=512,
 )
 
-response = client.compress_documents(
-  query=query,
-  documents=[Document(page_content=passage, metadata={'hai': 'hai'}) for passage in passages]
-)
 
-# print(f"Most relevant: {response[0].page_content}\nLeast relevant: {response[-1].page_content}")
-print(f"response: {response}")
+
+# =========================
+# 2. Define Manual State
+# =========================
+class ChatState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    temp: int
+
+
+# =========================
+# 3. Graph Node (manual state handling)
+# =========================
+def call_model(state: ChatState) -> ChatState:
+    # Trim history before sending to LLM
+    print("---call model ----")
+    print(f"current msg state {state['messages']}")
+    print("------")
+    trimmed_messages = trim_messages(
+        state["messages"],
+        strategy="last",
+        token_counter=count_tokens_approximately,
+        max_tokens=128000,
+        start_on="human",
+    )
+
+    # Call model
+    response: AIMessage = model.invoke(trimmed_messages)
+
+    # Add AI response
+    state["messages"].append(response)
+    state["temp"] = 1
+    return state
+
+
+
+# =========================
+# 4. Build LangGraph
+# =========================
+checkpointer = InMemorySaver()
+
+builder = StateGraph(ChatState)
+builder.add_node("call_model", call_model)
+builder.add_edge(START, "call_model")
+
+graph = builder.compile(checkpointer=checkpointer)
+
+
+# =========================
+# 5. Run Conversation (Manual)
+# =========================
+config = {
+    "configurable": {
+        "thread_id": "1"  # change this to reset memory
+    }
+}
+
+# ---- Turn 1
+state = {
+    "messages": [
+        HumanMessage(content="Hi, my name is Bob. I'm 18 years old."),
+    ],
+    "temp": 1
+}
+
+result = graph.invoke(state, config)
+result["messages"][-1].pretty_print()
+print('------------------')
+
+input_2 = {"messages": [HumanMessage(content="What's my name?")]}
+result_2 = graph.invoke(input_2, config)
+result_2["messages"][-1].pretty_print()
