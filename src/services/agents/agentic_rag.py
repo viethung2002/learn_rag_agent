@@ -1,5 +1,6 @@
 import logging
 import time
+import json
 from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, ToolMessage
@@ -7,10 +8,13 @@ from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.runtime import Runtime
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
-from src.services.ollama.client import OllamaClient
 from src.services.nvidia.client import NvidiaClient
 from src.services.opensearch.client import OpenSearchClient
 
@@ -26,10 +30,10 @@ from .nodes import (
     continue_after_guardrail,
     ainvoke_should_retrieve_step,
     route_after_should_retrieve,
-    
+    ainvoke_rerank_documents_step
 )
 from .state import AgentState
-from .tools import create_retriever_tool
+
 logging.basicConfig(
     filename="app.log",      # file txt
     level=logging.INFO,      # mức log
@@ -51,11 +55,11 @@ class AgenticRAGService:
     def __init__(
         self,
         opensearch_client: OpenSearchClient,
-        # ollama_client: OllamaClient,
         nvidia_client: NvidiaClient,
         embeddings_client: JinaEmbeddingsClient,
         langfuse_tracer: Optional[LangfuseTracer] = None,
         graph_config: Optional[GraphConfig] = None,
+        mcp_client: Optional[MultiServerMCPClient] = None,
     ):
         """Initialize agentic RAG service.
 
@@ -66,13 +70,25 @@ class AgenticRAGService:
         :param graph_config: Configuration for graph execution
         """
         self.opensearch = opensearch_client
-        # self.ollama = ollama_client
         self.nvidia = nvidia_client
 
         self.embeddings = embeddings_client
         self.langfuse_tracer = langfuse_tracer
         self.graph_config = graph_config or GraphConfig()
+        # MCP client for tool execution
+        if mcp_client is None:
+            self.mcp_client = MultiServerMCPClient({
+                "arxiv-tools": {
+                    "transport": "http",           
+                    "url": "http://fast-mcp-server:8100/mcp",
+                },
+            })
+        else:
+            self.mcp_client = mcp_client
 
+
+        self.graph = self._build_graph()
+        logger.info("✓ AgenticRAGService initialized successfully")
         logger.info("Initializing AgenticRAGService with configuration:")
         logger.info(f"  Model: {self.graph_config.model}")
         logger.info(f"  Top-k: {self.graph_config.top_k}")
@@ -98,35 +114,32 @@ class AgenticRAGService:
         workflow = StateGraph(AgentState, context_schema=Context)
 
         # Create tools (these still need to be created upfront for ToolNode)
-        retriever_tool = create_retriever_tool(
-            opensearch_client=self.opensearch,
-            embeddings_client=self.embeddings,
-            top_k=self.graph_config.top_k,
-            use_hybrid=self.graph_config.use_hybrid,
-        )
-        tools = [retriever_tool]
-        tools_by_name = {tool.name: tool for tool in tools}
-        async def tool_node(state: dict):
-            """Performs the tool call"""
+        async def tool_node(state: dict, runtime: Runtime[Context]):
+            tool_calls = state["messages"][-1].tool_calls
             result = []
-            for tool_call in state["messages"][-1].tool_calls:
-                tool = tools_by_name[tool_call["name"]]
-                observations = await tool.ainvoke(tool_call["args"])
+
+            for call in tool_calls:
+                tool = runtime.context.tools_by_name[call["name"]]
+                observations = await tool.ainvoke(call["args"])
+                observations = observations[0]['text']
+                observations = json.loads(observations)
+
                 relevant_sources = [
                     {
-                        "arxiv_id": observation.metadata.get("arxiv_id"),
-                        "title": observation.metadata.get("title"),
-                        "authors": observation.metadata.get("authors"),
-                        "url": observation.metadata.get("source"),
-                        "relevance_score": observation.metadata.get("top_k"),
+                        "arxiv_id": obs['metadata'].get("arxiv_id"),
+                        "title": obs['metadata'].get("title"),
+                        "authors": obs['metadata'].get("authors"),
+                        "url": obs['metadata'].get("source"),
+                        "relevance_score": obs['metadata'].get("top_k"),
                     }
-                    for observation in observations
+                    for obs in observations
                 ]
                 
-                result.append(ToolMessage(content=observations, tool_call_id=tool_call["id"]))
+                # result.append(ToolMessage(content=observations, tool_call_id=tool_call["id"]))
             return {
                 "messages": result,
-                "relevant_sources": relevant_sources
+                "relevant_sources": relevant_sources,
+                "retrieved_docs": observations      # ← THÊM FIELD NÀY (List[Document])
             }
 
         # Add nodes (just function references - no closures needed!)
@@ -140,7 +153,9 @@ class AgenticRAGService:
         workflow.add_node("rewrite_query", ainvoke_rewrite_query_step)
         workflow.add_node("generate_answer", ainvoke_generate_answer_step)
         workflow.add_node("should_retrieve", ainvoke_should_retrieve_step)
-                # Add edges
+        workflow.add_node("rerank", ainvoke_rerank_documents_step)
+        
+        # Add edges
         logger.info("Configuring graph edges and routing logic")
 
         # Start → guardrail validation
@@ -177,7 +192,8 @@ class AgenticRAGService:
         )
 
         # After tool retrieval → grade documents
-        workflow.add_edge("tool_retrieve", "grade_documents")
+        workflow.add_edge("tool_retrieve", "rerank")
+        workflow.add_edge("rerank", "grade_documents")
 
         # After grading → route based on relevance
         workflow.add_conditional_edges(
@@ -265,7 +281,12 @@ class AgenticRAGService:
                 return await self._run_workflow(query, model_to_use, user_id, None, thread_id)
 
         try:
-            return await _execute_with_trace()
+            async with self.mcp_client.session("arxiv-tools") as session:
+                tools = await load_mcp_tools(session)
+                self.tools_by_name = {tool.name: tool for tool in tools}
+
+                return await _execute_with_trace()
+
         except Exception as e:
             logger.error(f"Error in Agentic RAG execution: {str(e)}")
             logger.exception("Full traceback:")
@@ -307,6 +328,7 @@ class AgenticRAGService:
                 top_k=self.graph_config.top_k,
                 max_retrieval_attempts=self.graph_config.max_retrieval_attempts,
                 guardrail_threshold=self.graph_config.guardrail_threshold,
+                tools_by_name=self.tools_by_name,
             )
             
             config = {
@@ -336,7 +358,6 @@ class AgenticRAGService:
                 config=config,
                 context=runtime_context,
             )
-
             
             trace_id = self.langfuse_tracer.get_trace_id()
             logger.warning(f"Trace id: {trace_id}")

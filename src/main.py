@@ -103,12 +103,9 @@ async def lifespan(app: FastAPI):
     # Initialize Agentic
     app.state.agentic_rag = make_agentic_rag_service(
         opensearch_client=app.state.opensearch_client,
-        # ollama_client=ollama,
         nvidia_client=app.state.nvidia_client,
         embeddings_client=app.state.embeddings_service,
         langfuse_tracer=app.state.langfuse_tracer,
-        # model=settings.ollama_model,
-        # model=settings.nvidia_model,
     )
 
     logger.info("API ready")

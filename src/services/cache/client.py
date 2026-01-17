@@ -19,7 +19,7 @@ class CacheClient:
         self.settings = settings
         self.ttl = timedelta(hours=settings.ttl_hours)
 
-    def _generate_cache_key(self, request: AskRequest) -> str:
+    def _generate_cache_key(self, request) -> str:
         """Generate exact cache key based on request parameters."""
         key_data = {
             "query": request.query,
@@ -32,7 +32,7 @@ class CacheClient:
         key_hash = hashlib.sha256(key_string.encode()).hexdigest()[:16]
         return f"exact_cache:{key_hash}"
 
-    async def find_cached_response(self, request: AskRequest) -> Optional[AskResponse]:
+    async def find_cached_response(self, request):
         """Find cached response for exact query match."""
         try:
             cache_key = self._generate_cache_key(request)
@@ -44,7 +44,7 @@ class CacheClient:
                 try:
                     response_data = json.loads(cached_response)
                     logger.info(f"Cache hit for exact query match")
-                    return AskResponse(**response_data)
+                    return response_data
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to deserialize cached response: {e}")
                     return None
@@ -55,7 +55,7 @@ class CacheClient:
             logger.error(f"Error checking cache: {e}")
             return None
 
-    async def store_response(self, request: AskRequest, response: AskResponse) -> bool:
+    async def store_response(self, request, response) -> bool:
         """Store response for exact query matching."""
         try:
             cache_key = self._generate_cache_key(request)

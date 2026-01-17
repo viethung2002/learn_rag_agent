@@ -91,7 +91,7 @@ class OpenSearchSettings(BaseConfigSettings):
         case_sensitive=False,
     )
 
-    host: str = "http://localhost:9200"
+    host: str = "http://rag-opensearch:9200"
     index_name: str = "arxiv-papers"
     chunk_index_suffix: str = "chunks"  # Creates single hybrid index: {index_name}-{suffix}
     max_text_size: int = 1000000
