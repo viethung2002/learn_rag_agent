@@ -117,23 +117,25 @@ class AgenticRAGService:
         async def tool_node(state: dict, runtime: Runtime[Context]):
             tool_calls = state["messages"][-1].tool_calls
             result = []
-
+            relevant_sources = []
+            observations = []
             for call in tool_calls:
                 tool = runtime.context.tools_by_name[call["name"]]
-                observations = await tool.ainvoke(call["args"])
-                observations = observations[0]['text']
-                observations = json.loads(observations)
+                if tool.name=="retrieve_papers":
+                    observations = await tool.ainvoke(call["args"])
+                    observations = observations[0]['text']
+                    observations = json.loads(observations)
 
-                relevant_sources = [
-                    {
-                        "arxiv_id": obs['metadata'].get("arxiv_id"),
-                        "title": obs['metadata'].get("title"),
-                        "authors": obs['metadata'].get("authors"),
-                        "url": obs['metadata'].get("source"),
-                        "relevance_score": obs['metadata'].get("top_k"),
-                    }
-                    for obs in observations
-                ]
+                    relevant_sources = [
+                        {
+                            "arxiv_id": obs['metadata'].get("arxiv_id"),
+                            "title": obs['metadata'].get("title"),
+                            "authors": obs['metadata'].get("authors"),
+                            "url": obs['metadata'].get("source"),
+                            "relevance_score": obs['metadata'].get("top_k"),
+                        }
+                        for obs in observations
+                    ]
                 
                 # result.append(ToolMessage(content=observations, tool_call_id=tool_call["id"]))
             return {

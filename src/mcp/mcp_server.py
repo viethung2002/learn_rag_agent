@@ -1,18 +1,16 @@
 import logging
+from typing import  Any, Dict, List, Optional, TypedDict
 
 from fastmcp import FastMCP
 from langchain_core.documents import Document
+from langchain_core.messages import AIMessage
+from langchain_tavily import TavilySearch
 
 from src.services.embeddings.factory import make_embeddings_client
 from src.services.opensearch.factory import make_opensearch_client
 
 mcp = FastMCP("arxiv-tools")
 logger = logging.getLogger(__name__)
-
-opensearch_client = make_opensearch_client()
-embeddings_client = make_embeddings_client()
-top_k = 4
-use_hybrid = True
 
 @mcp.tool()
 async def retrieve_papers(query: str) -> list[Document]:
@@ -29,6 +27,10 @@ async def retrieve_papers(query: str) -> list[Document]:
     :param query: The search query describing what papers to find
     :returns: List of relevant paper excerpts with metadata
     """
+    opensearch_client = make_opensearch_client()
+    embeddings_client = make_embeddings_client()
+    top_k = 4
+    use_hybrid = True
     logger.info(f"Retrieving papers for query: {query[:100]}...")
     logger.debug(f"Search mode: {'hybrid' if use_hybrid else 'bm25'}, top_k: {top_k}")
 
@@ -72,6 +74,40 @@ async def retrieve_papers(query: str) -> list[Document]:
 
     return documents
 
+
+@mcp.tool()
+async def web_search(query: str) -> str:
+    """Perform a web search to gather current information.
+
+    Use this tool when the user asks about:
+    - Recent events or news
+    - Current statistics or data
+    - Trending topics
+    - Information that may have changed recently
+
+    :param query: The search query describing what information to find
+    :returns: A summary of the web search results
+    """
+    search_tool = TavilySearch(
+        max_results=2,
+        tavily_api_key="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",  # 👉 nên để ENV thay vì hardcode
+    )
+
+    # TavilySearch là Runnable → dùng ainvoke
+    results = await search_tool.ainvoke({"query": query})
+
+    # Chuẩn hóa output thành text gọn gàng cho MCP
+    if not results or "results" not in results:
+        return "No search results found."
+
+    summaries = []
+    for r in results["results"]:
+        title = r.get("title", "No title")
+        content = r.get("content", "")
+        url = r.get("url", "")
+        summaries.append(f"- {title}\n  {content}\n  Source: {url}")
+
+    return "\n".join(summaries)
 
 if __name__ == "__main__":
     opensearch_client = make_opensearch_client()

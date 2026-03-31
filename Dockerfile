@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src /app/src
 
 FROM python:3.12.8-slim AS final
-
+  
 EXPOSE 8000
 
 # PYTHONUNBUFFERED=1 to disable output buffering

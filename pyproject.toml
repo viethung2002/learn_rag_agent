@@ -32,6 +32,17 @@ dependencies = [
     "fastmcp>=2.14.3",
     "langchain-mcp-adapters>=0.2.1",
     "langchain-tavily>=0.2.16",
+    
+    "sqlmodel>=0.0.31",
+    "email-validator<3.0.0.0,>=2.1.0.post1",
+    "passlib[bcrypt]<2.0.0,>=1.7.4",
+    "bcrypt==4.3.0",
+    "tenacity<9.0.0,>=8.2.3",
+    "emails<1.0,>=0.6",
+    "jinja2<4.0.0,>=3.1.4",
+    "psycopg[binary]<4.0.0,>=3.1.13",
+    "sentry-sdk[fastapi]<2.0.0,>=1.40.6",
+    "pyjwt<3.0.0,>=2.8.0",
 ]
 readme = "README.md"
 

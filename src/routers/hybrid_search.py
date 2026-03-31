@@ -1,8 +1,13 @@
 import logging
+import uuid
+from typing import Any
+
+from sqlmodel import func, select
 
 from fastapi import APIRouter, HTTPException
 from src.dependencies import EmbeddingsDep, OpenSearchDep
 from src.schemas.api.search import HybridSearchRequest, SearchHit, SearchResponse
+from src.api.deps import CurrentUser, SessionDep
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +16,8 @@ router = APIRouter(prefix="/hybrid-search", tags=["hybrid-search"])
 
 @router.post("/", response_model=SearchResponse)
 async def hybrid_search(
-    request: HybridSearchRequest, opensearch_client: OpenSearchDep, embeddings_service: EmbeddingsDep
+    request: HybridSearchRequest, opensearch_client: OpenSearchDep, embeddings_service: EmbeddingsDep,
+    session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
 ) -> SearchResponse:
     """
     Hybrid search endpoint supporting multiple search modes.

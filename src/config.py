@@ -159,6 +159,20 @@ class TelegramSettings(BaseConfigSettings):
     enabled: bool = False
 
 
+class AirflowSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="AIRFLOW__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    webserver_url: str = "http://rag-airflow:8080"
+    username: str = "admin"
+    password: str = "admin"
+
+
 class Settings(BaseConfigSettings):
     app_version: str = "0.1.0"
     debug: bool = True
@@ -193,6 +207,7 @@ class Settings(BaseConfigSettings):
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
+    airflow: AirflowSettings = Field(default_factory=AirflowSettings)
 
     @field_validator("postgres_database_url")
     @classmethod
