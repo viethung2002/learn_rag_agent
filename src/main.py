@@ -1,15 +1,26 @@
 import logging
 import os
+from pathlib import Path
+from click import command
+import sentry_sdk
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from starlette.middleware.cors import CORSMiddleware
+
+from src.api.main import api_router
+from src.core.config import settings
+
 from src.config import get_settings
 from src.db.factory import make_database
 from src.routers import agentic_ask, hybrid_search, ping
 from src.routers.ask import ask_router, stream_router
 from src.routers.ask_gemini import ask_gemini,stream_gemini
 from src.routers.ask_nvidia import ask_nvidia,stream_nvidia
+from src.routers import agentic_ask, hybrid_search, ping, upload
 
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
@@ -31,17 +42,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
+def custom_generate_unique_id(route: APIRoute) -> str:
+    return f"{route.tags[0]}-{route.name}"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Lifespan for the API.
     """
     logger.info("Starting RAG API...")
+    try:
+        alembic_cfg = uvicorn.Config(str(Path(__file__).resolve().parent / "alembic.ini"))
+        command.upgrade(alembic_cfg, "head")
+        from sqlmodel import Session
+        from src.core.db import engine, init_db
+        with Session(engine) as session:
+            init_db(session)
+        logger.info("Database migrations and initial user ready")
+    except Exception as e:
+        logger.warning("DB migration/init non-fatal: %s", e)
 
     settings = get_settings()
     app.state.settings = settings
-
+   
     database = make_database()
     app.state.database = database
     logger.info("Database connected")
@@ -53,6 +75,7 @@ async def lifespan(app: FastAPI):
     # Verify OpenSearch connectivity and create index if needed
     if opensearch_client.health_check():
         logger.info("OpenSearch connected successfully")
+        
 
         # Setup hybrid index (supports all search types)
         setup_results = opensearch_client.setup_indices(force=False)
@@ -119,14 +142,24 @@ async def lifespan(app: FastAPI):
     database.teardown()
     logger.info("API shutdown complete")
 
-
+if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
+    sentry_sdk.init(dsn=str(settings.SENTRY_DSN), enable_tracing=True)
 app = FastAPI(
     title="arXiv Paper Curator API",
     description="Personal arXiv CS.AI paper curator with RAG capabilities",
     version=os.getenv("APP_VERSION", "0.1.0"),
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",\
+    generate_unique_id_function=custom_generate_unique_id,
     lifespan=lifespan,
 )
-
+if settings.all_cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.all_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 # Include routers
 app.include_router(ping.router, prefix="/api/v1")  # Health check endpoint
 app.include_router(hybrid_search.router, prefix="/api/v1")  # Search chunks with BM25/hybrid
@@ -136,8 +169,10 @@ app.include_router(ask_gemini, prefix="/api/v1")  # RAG question answering with 
 app.include_router(stream_gemini, prefix="/api/v1")  # Streaming RAG
 app.include_router(ask_nvidia, prefix="/api/v1")  # RAG question answering with Nvidia LLM
 app.include_router(stream_nvidia, prefix="/api/v1")  # Streaming RAG
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 app.include_router(agentic_ask.router)  # Agentic RAG with intelligent retrieval
+app.include_router(upload.router, prefix="/api/v1")  # Paper upload endpoint
 
 
 if __name__ == "__main__":

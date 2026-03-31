@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from src.dependencies import AgenticRAGDep, LangfuseDep, CacheDep
 from src.schemas.api.ask import AgenticAskResponse, AskRequest, FeedbackRequest, FeedbackResponse
+from src.api.deps import CurrentUser, SessionDep
 
 router = APIRouter(prefix="/api/v1", tags=["agentic-rag"])
 logger = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ async def ask_agentic(
     request: AskRequest,
     agentic_rag: AgenticRAGDep,
     cache_client: CacheDep,
+    session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
 ) -> AgenticAskResponse:
     """
     Agentic RAG endpoint with intelligent retrieval and query refinement.
@@ -78,7 +80,7 @@ async def ask_agentic(
         return response
 
 
-    except ValueError as e:
+    except ValueError as e:  
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
@@ -88,6 +90,10 @@ async def ask_agentic(
 async def submit_feedback(
     request: FeedbackRequest,
     langfuse_tracer: LangfuseDep,
+    session: SessionDep, 
+    current_user: CurrentUser, 
+    skip: int = 0, 
+    limit: int = 100
 ) -> FeedbackResponse:
     """
     Submit user feedback for an agentic RAG response.

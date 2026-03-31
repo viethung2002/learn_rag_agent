@@ -22,11 +22,13 @@ services:
       - .env
     volumes:
       - ./src:/app/src
+      - ./data/user_uploads:/app/data/user_uploads
     environment:
       # Container-specific overrides
       - OPENSEARCH_HOST=http://opensearch:9200
       - OPENSEARCH__HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
+      - POSTGRES_SERVER=postgres
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
       - LANGFUSE_HOST=http://langfuse-web:3000 
       - LANGFUSE_DEBUG=true
@@ -129,16 +131,19 @@ services:
       - AIRFLOW_HOME=/opt/airflow
       - PYTHONPATH=/opt/airflow/src
       # Container hostnames for Airflow
+      - POSTGRES_SERVER=postgres
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
       - OPENSEARCH_HOST=http://opensearch:9200
       - OPENSEARCH__HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
       - REDIS__HOST=redis
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - airflow_logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./src:/opt/airflow/src
+      - ./data/user_uploads:/opt/airflow/user_uploads
     ports:
       - "8080:8080"
     # Command handled by entrypoint.sh
@@ -180,6 +185,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db/01-init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_db"]
       interval: 5s
