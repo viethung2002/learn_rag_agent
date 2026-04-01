@@ -14,7 +14,7 @@ from src.schemas.pdf_parser.models import ArxivMetadata, ParsedPaper, PdfContent
 from src.services.arxiv.client import ArxivClient
 from src.services.opensearch.client import OpenSearchClient
 from src.services.pdf_parser.parser import PDFParserService
-
+from src.services.neo4j.ingestion import PaperGraphIngestion
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +25,7 @@ class MetadataFetcher:
         self,
         arxiv_client: ArxivClient,
         pdf_parser: PDFParserService,
+        neo4j_ingestion: PaperGraphIngestion,
         pdf_cache_dir: Optional[Path] = None,
         max_concurrent_downloads: int = 5,
         max_concurrent_parsing: int = 3,
@@ -34,7 +35,7 @@ class MetadataFetcher:
 
         :param arxiv_client: Client for arXiv API operations
         :param pdf_parser: Service for parsing PDF documents
-        :param opensearch_client: Optional OpenSearch client for indexing
+        :param neo4j_ingestion: Service for ingesting papers into Neo4j
         :param pdf_cache_dir: Directory for caching downloaded PDFs
         :param max_concurrent_downloads: Maximum concurrent PDF downloads
         :param max_concurrent_parsing: Maximum concurrent PDF parsing operations
@@ -55,6 +56,8 @@ class MetadataFetcher:
         self.max_concurrent_downloads = max_concurrent_downloads
         self.max_concurrent_parsing = max_concurrent_parsing
         self.settings = settings or get_settings()
+        self.neo4j_ingestion = neo4j_ingestion
+
 
     async def fetch_and_process_papers(
         self,
@@ -64,6 +67,7 @@ class MetadataFetcher:
         process_pdfs: bool = True,
         store_to_db: bool = True,
         db_session: Optional[Session] = None,
+        sync_to_neo4j: bool = True,
     ) -> Dict[str, Any]:
         """Fetch papers from arXiv, process PDFs, and store to database.
 
@@ -91,6 +95,7 @@ class MetadataFetcher:
             "papers_indexed": 0,
             "errors": [],
             "processing_time": 0,
+            "papers_synced_neo4j": 0,
         }
 
         start_time = datetime.now()
@@ -120,6 +125,10 @@ class MetadataFetcher:
                 logger.info("Step 3: Storing papers to database...")
                 stored_count = self._store_papers_to_db(papers, pdf_results.get("parsed_papers", {}), db_session)
                 results["papers_stored"] = stored_count
+                if self.neo4j_ingestion and sync_to_neo4j:
+                    neo_stats = self.neo4j_ingestion.ingest_papers(sync_to_neo4j)
+                    results["papers_synced_neo4j"] = neo_stats["ingested"]
+                    logger.info("Neo4j graph sync: %s/%s papers", neo_stats["ingested"], neo_stats["total"])
             elif store_to_db:
                 logger.warning("Database storage requested but no session provided")
                 results["errors"].append("Database session not provided for storage")
@@ -407,6 +416,7 @@ def make_metadata_fetcher(
     pdf_parser: PDFParserService,
     pdf_cache_dir: Optional[Path] = None,
     settings: Optional[Settings] = None,
+    neo4j_ingestion: Optional[PaperGraphIngestion] = None,
 ) -> MetadataFetcher:
     """Create MetadataFetcher instance with configuration settings.
 
@@ -414,21 +424,28 @@ def make_metadata_fetcher(
     :param pdf_parser: Service for parsing PDF documents
     :param pdf_cache_dir: Directory for caching downloaded PDFs
     :param settings: Application settings instance (uses default if None)
+    :param neo4j_ingestion: Graph sync service; if omitted, one is built from settings
     :type arxiv_client: ArxivClient
     :type pdf_parser: PDFParserService
     :type pdf_cache_dir: Optional[Path]
     :type settings: Optional[Settings]
+    :type neo4j_ingestion: Optional[PaperGraphIngestion]
     :returns: Configured MetadataFetcher instance
     :rtype: MetadataFetcher
     """
     from src.config import get_settings
+    from src.services.neo4j.factory import make_neo4j_client
 
     if settings is None:
         settings = get_settings()
 
+    if neo4j_ingestion is None:
+        neo4j_ingestion = PaperGraphIngestion(make_neo4j_client(settings))
+
     return MetadataFetcher(
         arxiv_client=arxiv_client,
         pdf_parser=pdf_parser,
+        neo4j_ingestion=neo4j_ingestion,
         pdf_cache_dir=pdf_cache_dir,
         max_concurrent_downloads=settings.arxiv.max_concurrent_downloads,
         max_concurrent_parsing=settings.arxiv.max_concurrent_parsing,
