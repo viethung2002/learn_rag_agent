@@ -19,6 +19,8 @@ from src.services.ollama.factory import make_ollama_client
 from src.services.gemini.factory import make_gemini_client
 from src.services.nvidia.factory import make_nvidia_client
 from src.services.opensearch.factory import make_opensearch_client
+from src.services.neo4j.factory import make_neo4j_client, make_neo4j_driver
+
 from src.services.pdf_parser.factory import make_pdf_parser_service
 from src.services.telegram.factory import make_telegram_service
 from src.services.agents.factory import make_agentic_rag_service
@@ -49,6 +51,14 @@ async def lifespan(app: FastAPI):
     # Initialize search service
     opensearch_client = make_opensearch_client()
     app.state.opensearch_client = opensearch_client
+
+    neo4j_client = make_neo4j_client(settings)
+    app.state.neo4j_client = neo4j_client
+    try:
+        neo4j_client.verify_connectivity()
+        logger.info("Neo4j connected successfully")
+    except Exception as e:
+        logger.warning("Neo4j connectivity check failed - graph features may be limited: %s", e)
 
     # Verify OpenSearch connectivity and create index if needed
     if opensearch_client.health_check():
@@ -115,6 +125,14 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, "telegram_service") and app.state.telegram_service:
         await app.state.telegram_service.stop()
         logger.info("Telegram bot stopped")
+
+    if getattr(app.state, "neo4j_client", None) is not None:
+        try:
+            app.state.neo4j_client.close()
+            logger.info("Neo4j client closed")
+        except Exception as e:
+            logger.warning("Error closing Neo4j client: %s", e)
+        make_neo4j_driver.cache_clear()
 
     database.teardown()
     logger.info("API shutdown complete")

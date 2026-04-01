@@ -32,6 +32,8 @@ dependencies = [
     "fastmcp>=2.14.3",
     "langchain-mcp-adapters>=0.2.1",
     "langchain-tavily>=0.2.16",
+    "neo4j>=6.1.0",
+    "langchain-neo4j>=0.9.0",
 ]
 readme = "README.md"
 
