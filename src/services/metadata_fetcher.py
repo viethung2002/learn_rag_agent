@@ -306,34 +306,30 @@ class MetadataFetcher:
         return (download_success, parsed_paper)
 
     def _serialize_parsed_content(self, parsed_paper: ParsedPaper) -> Dict[str, Any]:
-        """Serialize ParsedPaper content for database storage.
+            """Serialize ParsedPaper content for database storage."""
+            try:
+                pdf_content = parsed_paper.pdf_content
 
-        :param parsed_paper: ParsedPaper object with PDF content
-        :type parsed_paper: ParsedPaper
-        :returns: Dictionary with serialized content for database storage
-        :rtype: Dict[str, Any]
-        """
-        try:
-            pdf_content = parsed_paper.pdf_content
+                # Serialize sections
+                sections = [{"title": section.title, "content": section.content} for section in pdf_content.sections]
 
-            # Serialize sections
-            sections = [{"title": section.title, "content": section.content} for section in pdf_content.sections]
+                # --- SỬA DÒNG DƯỚI ĐÂY ---
+                # Bọc chuỗi string thành Dictionary để khớp với Schema của DB
+                references = [{"raw_text": ref} for ref in pdf_content.references]
+                # -------------------------
 
-            # Serialize references
-            references = list(pdf_content.references)  #
-
-            return {
-                "raw_text": pdf_content.raw_text,
-                "sections": sections,
-                "references": references,
-                "parser_used": pdf_content.parser_used.value if pdf_content.parser_used else None,
-                "parser_metadata": pdf_content.metadata or {},
-                "pdf_processed": True,
-                "pdf_processing_date": datetime.now(),
-            }
-        except Exception as e:
-            logger.error(f"Failed to serialize parsed content: {e}")
-            return {"pdf_processed": False, "parser_metadata": {"error": str(e)}}
+                return {
+                    "raw_text": pdf_content.raw_text,
+                    "sections": sections,
+                    "references": references,
+                    "parser_used": pdf_content.parser_used.value if pdf_content.parser_used else None,
+                    "parser_metadata": pdf_content.metadata or {},
+                    "pdf_processed": True,
+                    "pdf_processing_date": datetime.now(),
+                }
+            except Exception as e:
+                logger.error(f"Failed to serialize parsed content: {e}")
+                return {"pdf_processed": False, "parser_metadata": {"error": str(e)}}
 
     def _store_papers_to_db(
         self,
