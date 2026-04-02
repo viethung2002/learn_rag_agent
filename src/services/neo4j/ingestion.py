@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -25,7 +26,7 @@ SET p.paper_id = $paper_id,
     p.pdf_processed = $pdf_processed
 """
 
-# Link authors after paper exists (requires unique Author.name if you use constraint).
+# Link authors after paper exists.
 _LINK_AUTHORS = """
 MATCH (p:Paper {arxiv_id: $arxiv_id})
 WITH p
@@ -34,9 +35,21 @@ MERGE (a:Author {name: author_name})
 MERGE (a)-[:WROTE]->(p)
 """
 
+# --- BƯỚC 1: THÊM CÂU LỆNH TẠO ĐỒ THỊ TRÍCH DẪN ---
+_LINK_REFERENCES = """
+MATCH (p:Paper {arxiv_id: $arxiv_id})
+WITH p
+UNWIND $references AS ref_title
+// Tạo Node Reference với title làm định danh
+MERGE (r:Reference {title: ref_title})
+// Nối bài báo gốc CITES (trích dẫn) Reference này
+MERGE (p)-[:CITES]->(r)
+"""
+# --------------------------------------------------
+
 
 def _paper_to_merge_params(paper: Any) -> Dict[str, Any]:
-    # Dùng getattr để lấy dữ liệu an toàn, phòng trường hợp thuộc tính không tồn tại
+    # Dùng getattr để lấy dữ liệu an toàn
     authors = getattr(paper, "authors", []) or []
     if not isinstance(authors, list):
         authors = []
@@ -54,15 +67,48 @@ def _paper_to_merge_params(paper: Any) -> Dict[str, Any]:
     else:
         published_str = str(published) if published is not None else ""
 
-    # Xử lý an toàn cho thuộc tính 'id'
     if hasattr(paper, "id") and paper.id:
         pid = str(paper.id)
     else:
-        # Nếu không có 'id' (do là ArxivPaper), dùng tạm arxiv_id
         pid = str(getattr(paper, "arxiv_id", ""))
 
-    # Xử lý an toàn cho thuộc tính 'pdf_processed'
     is_processed = getattr(paper, "pdf_processed", False)
+
+# --- BƯỚC 2: XỬ LÝ LỌC TÊN BÀI BÁO TRÍCH DẪN ---
+    raw_refs = getattr(paper, "references", []) or []
+    if not isinstance(raw_refs, list):
+        raw_refs = []
+        
+    # LOG TRINH SÁT: Kiểm tra xem Neo4j có nhận được dữ liệu thô từ DB không
+    logger.info(f"DEBUG NEO4J: Đã nhận {len(raw_refs)} raw_refs từ DB cho bài báo {pid}")
+        
+    extracted_refs = []
+    title_pattern = re.compile(r"['\"‘“](.*?)['\"’”]")
+    
+    for r in raw_refs:
+        raw_text = ""
+        if isinstance(r, dict) and "raw_text" in r:
+            raw_text = r["raw_text"]
+        elif isinstance(r, str):
+            raw_text = r
+            
+        if raw_text:
+            match = title_pattern.search(raw_text)
+            if match:
+                title = match.group(1).strip()
+                title = title.rstrip(",.")
+                if len(title) > 15:
+                    extracted_refs.append(title)
+            else:
+                # --- NẾU BẠN THIẾU ĐOẠN ELSE NÀY, KẾT QUẢ SẼ LUÔN LÀ 0 ---
+                title = raw_text.strip()
+                title = re.sub(r"^\s*\[\d+\]\s*", "", title)
+                title = re.sub(r"^\s*\d+\.\s*", "", title)
+                if len(title) > 15:
+                    extracted_refs.append(title[:250])  # Lấy tối đa 250 ký tự
+
+    logger.info(f"DEBUG NEO4J: Tách được {len(extracted_refs)} trích dẫn cho bài báo {pid}")
+    # -----------------------------------------------
 
     return {
         "arxiv_id": getattr(paper, "arxiv_id", ""),
@@ -74,6 +120,7 @@ def _paper_to_merge_params(paper: Any) -> Dict[str, Any]:
         "categories": [str(c) for c in categories],
         "pdf_processed": bool(is_processed),
         "author_names": [str(a).strip() for a in authors if str(a).strip()],
+        "references": extracted_refs, # Trả mảng title đã lọc về cho Neo4j
     }
 
 
@@ -86,13 +133,28 @@ class PaperGraphIngestion:
 
     def ingest_paper(self, paper: Paper) -> None:
         params = _paper_to_merge_params(paper)
-        author_names = params.pop("author_names")
+        
+        # Bóc 2 mảng này ra để chạy Cypher riêng
+        author_names = params.pop("author_names", [])
+        references = params.pop("references", []) # Lấy mảng references ra
+        
+        # 1. Tạo Paper Node
         self._client.execute_write(_MERGE_PAPER, params)
+        
+        # 2. Link Authors
         if self._link_authors and author_names:
             self._client.execute_write(
                 _LINK_AUTHORS,
                 {"arxiv_id": params["arxiv_id"], "author_names": author_names},
             )
+            
+        # --- BƯỚC 3: THỰC THI LINK REFERENCES ---
+        if references:
+            self._client.execute_write(
+                _LINK_REFERENCES,
+                {"arxiv_id": params["arxiv_id"], "references": references},
+            )
+        # ----------------------------------------
 
     def ingest_papers(self, papers: List[Paper]) -> Dict[str, int]:
         ok = 0
@@ -101,7 +163,7 @@ class PaperGraphIngestion:
                 self.ingest_paper(paper)
                 ok += 1
             except Exception as e:
-                logger.error("Neo4j ingest failed for %s: %s", paper.arxiv_id, e)
+                logger.error("Neo4j ingest failed for %s: %s", getattr(paper, "arxiv_id", "Unknown"), e)
         return {"ingested": ok, "total": len(papers)}
 
     def ingest_from_session(
