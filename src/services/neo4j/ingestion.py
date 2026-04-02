@@ -35,33 +35,44 @@ MERGE (a)-[:WROTE]->(p)
 """
 
 
-def _paper_to_merge_params(paper: Paper) -> Dict[str, Any]:
-    authors = paper.authors or []
+def _paper_to_merge_params(paper: Any) -> Dict[str, Any]:
+    # Dùng getattr để lấy dữ liệu an toàn, phòng trường hợp thuộc tính không tồn tại
+    authors = getattr(paper, "authors", []) or []
     if not isinstance(authors, list):
         authors = []
 
-    categories = paper.categories or []
+    categories = getattr(paper, "categories", []) or []
     if not isinstance(categories, list):
         categories = []
 
-    published = paper.published_date
-    published_str = published.isoformat() if published is not None else ""
+    published = getattr(paper, "published_date", None)
+    
+    if isinstance(published, str):
+        published_str = published
+    elif hasattr(published, "isoformat"):
+        published_str = published.isoformat()
+    else:
+        published_str = str(published) if published is not None else ""
 
-    pid: str
-    if isinstance(paper.id, UUID):
+    # Xử lý an toàn cho thuộc tính 'id'
+    if hasattr(paper, "id") and paper.id:
         pid = str(paper.id)
     else:
-        pid = str(paper.id)
+        # Nếu không có 'id' (do là ArxivPaper), dùng tạm arxiv_id
+        pid = str(getattr(paper, "arxiv_id", ""))
+
+    # Xử lý an toàn cho thuộc tính 'pdf_processed'
+    is_processed = getattr(paper, "pdf_processed", False)
 
     return {
-        "arxiv_id": paper.arxiv_id,
+        "arxiv_id": getattr(paper, "arxiv_id", ""),
         "paper_id": pid,
-        "title": paper.title or "",
-        "abstract": paper.abstract or "",
-        "pdf_url": paper.pdf_url or "",
+        "title": getattr(paper, "title", "") or "",
+        "abstract": getattr(paper, "abstract", "") or "",
+        "pdf_url": getattr(paper, "pdf_url", "") or "",
         "published_date": published_str,
         "categories": [str(c) for c in categories],
-        "pdf_processed": bool(paper.pdf_processed),
+        "pdf_processed": bool(is_processed),
         "author_names": [str(a).strip() for a in authors if str(a).strip()],
     }
 

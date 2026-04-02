@@ -28,7 +28,7 @@ class MetadataFetcher:
         neo4j_ingestion: PaperGraphIngestion,
         pdf_cache_dir: Optional[Path] = None,
         max_concurrent_downloads: int = 5,
-        max_concurrent_parsing: int = 3,
+        max_concurrent_parsing: int = 1,
         settings: Optional[Settings] = None,
     ):
         """Initialize metadata fetcher with services and settings.
@@ -126,7 +126,7 @@ class MetadataFetcher:
                 stored_count = self._store_papers_to_db(papers, pdf_results.get("parsed_papers", {}), db_session)
                 results["papers_stored"] = stored_count
                 if self.neo4j_ingestion and sync_to_neo4j:
-                    neo_stats = self.neo4j_ingestion.ingest_papers(sync_to_neo4j)
+                    neo_stats = self.neo4j_ingestion.ingest_papers(papers)
                     results["papers_synced_neo4j"] = neo_stats["ingested"]
                     logger.info("Neo4j graph sync: %s/%s papers", neo_stats["ingested"], neo_stats["total"])
             elif store_to_db:

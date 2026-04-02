@@ -12,6 +12,8 @@ services:
       - "7474:7474"
       - "7687:7687"
     restart: always
+    networks:
+      - rag-network
   # API service
   api:
     build: .
