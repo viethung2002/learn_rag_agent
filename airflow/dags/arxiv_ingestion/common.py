@@ -15,7 +15,7 @@ from src.services.opensearch.factory import make_opensearch_client
 from src.services.pdf_parser.factory import make_pdf_parser_service
 
 logger = logging.getLogger(__name__)
-
+@lru_cache(maxsize=1)
 def get_cached_services() -> Tuple[Any, Any, Any, Any, Any]:
     """Initialize and return service instances."""
     logger.info("Initializing services")
