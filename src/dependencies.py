@@ -21,10 +21,12 @@ from src.services.ollama.client import OllamaClient
 from src.services.gemini.client import GeminiClient
 from src.services.nvidia.client import NvidiaClient
 from src.services.opensearch.client import OpenSearchClient
+from src.services.neo4j.client import Neo4jClient
 from src.services.pdf_parser.parser import PDFParserService
 from src.services.telegram.bot import TelegramBot
 from src.services.agents.agentic_rag import AgenticRAGService
 from src.services.agents.factory import make_agentic_rag_service
+
 
 
 @lru_cache
@@ -52,6 +54,11 @@ def get_db_session(database: Annotated[BaseDatabase, Depends(get_database)]) -> 
 def get_opensearch_client(request: Request) -> OpenSearchClient:
     """Get OpenSearch client from the request state."""
     return request.app.state.opensearch_client
+
+
+def get_neo4j_client(request: Request) -> Neo4jClient:
+    """Get Neo4j client from the request state."""
+    return request.app.state.neo4j_client
 
 
 def get_arxiv_client(request: Request) -> ArxivClient:
@@ -105,6 +112,7 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 DatabaseDep = Annotated[BaseDatabase, Depends(get_database)]
 SessionDep = Annotated[Session, Depends(get_db_session)]
 OpenSearchDep = Annotated[OpenSearchClient, Depends(get_opensearch_client)]
+Neo4jDep = Annotated[Neo4jClient, Depends(get_neo4j_client)]
 ArxivDep = Annotated[ArxivClient, Depends(get_arxiv_client)]
 PDFParserDep = Annotated[PDFParserService, Depends(get_pdf_parser)]
 EmbeddingsDep = Annotated[JinaEmbeddingsClient, Depends(get_embeddings_service)]

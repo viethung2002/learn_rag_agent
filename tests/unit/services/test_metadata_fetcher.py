@@ -9,6 +9,7 @@ from src.schemas.arxiv.paper import ArxivPaper
 from src.schemas.pdf_parser.models import ParserType, PdfContent
 from src.services.arxiv.client import ArxivClient
 from src.services.metadata_fetcher import MetadataFetcher, make_metadata_fetcher
+from src.services.neo4j.ingestion import PaperGraphIngestion
 from src.services.pdf_parser.parser import PDFParserService
 
 
@@ -28,11 +29,18 @@ class TestMetadataFetcher:
         return parser
 
     @pytest.fixture
-    def metadata_fetcher(self, mock_arxiv_client, mock_pdf_parser, tmp_path):
+    def mock_neo4j_ingestion(self):
+        return MagicMock(spec=PaperGraphIngestion)
+
+    @pytest.fixture
+    def metadata_fetcher(
+        self, mock_arxiv_client, mock_pdf_parser, mock_neo4j_ingestion, tmp_path
+    ):
         """Create MetadataFetcher instance for testing."""
         return MetadataFetcher(
             arxiv_client=mock_arxiv_client,
             pdf_parser=mock_pdf_parser,
+            neo4j_ingestion=mock_neo4j_ingestion,
             pdf_cache_dir=tmp_path,
             max_concurrent_downloads=2,
             max_concurrent_parsing=1,

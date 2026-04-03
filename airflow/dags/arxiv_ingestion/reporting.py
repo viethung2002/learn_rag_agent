@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 
-from .common import get_cached_services
+from .common import get_arxiv_service, get_db_service, get_opensearch_service, get_metadata_fetcher_service, get_neo4j_service, get_pdf_parser_service
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,11 @@ def generate_daily_report(**context):
     }
 
     try:
-        _arxiv_client, _pdf_parser, database, _metadata_fetcher, opensearch_client = get_cached_services()
+        # _arxiv_client, _pdf_parser, database, _metadata_fetcher, opensearch_client = get_cached_services()
+        database = get_db_service()
+        opensearch_client = get_opensearch_service()
+
+
 
         with database.get_session() as session:
             from sqlalchemy import func
