@@ -1,21 +1,20 @@
 import logging
-
 from sqlalchemy import text
 
-from .common import get_cached_services
+# CHỈ import 2 hàm cần thiết, xóa bỏ get_cached_services và các service thừa
+from .common import get_db_service, get_opensearch_service
 
 logger = logging.getLogger(__name__)
 
-
 def setup_environment():
     """Setup environment and verify dependencies.
-
     Creates hybrid search index with RRF pipeline.
     """
     logger.info("Setting up environment for arXiv paper ingestion")
 
     try:
-        arxiv_client, _pdf_parser, database, _metadata_fetcher, opensearch_client = get_cached_services()
+        database = get_db_service()
+        opensearch_client = get_opensearch_service()
 
         with database.get_session() as session:
             session.execute(text("SELECT 1"))
@@ -42,9 +41,6 @@ def setup_environment():
             logger.info("RRF pipeline already exists")
 
         logger.info("Hybrid search setup completed")
-
-        logger.info(f"arXiv client ready: {arxiv_client.base_url}")
-        logger.info("PDF parser service ready (Docling models cached)")
 
         return {"status": "success", "message": "Environment setup completed"}
 
