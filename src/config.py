@@ -81,6 +81,21 @@ class ChunkingSettings(BaseConfigSettings):
     min_chunk_size: int = 100  # Minimum words for a valid chunk
     section_based: bool = True  # Use section-based chunking when available
 
+class Neo4jSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="NEO4J__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    uri: str = "bolt://localhost:7687"
+    user: str = "neo4j"
+    password: str = ""
+    database: str | None = None  # Neo4j 4+: None = default DB
+    max_connection_lifetime: int = 3600  # seconds
+    connection_timeout: float = 30.0
 
 class OpenSearchSettings(BaseConfigSettings):
     model_config = SettingsConfigDict(
@@ -204,6 +219,7 @@ class Settings(BaseConfigSettings):
     pdf_parser: PDFParserSettings = Field(default_factory=PDFParserSettings)
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)
+    neo4j: Neo4jSettings = Field(default_factory=Neo4jSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)

@@ -43,6 +43,8 @@ dependencies = [
     "psycopg[binary]<4.0.0,>=3.1.13",
     "sentry-sdk[fastapi]<2.0.0,>=1.40.6",
     "pyjwt<3.0.0,>=2.8.0",
+    "neo4j>=6.1.0",
+    "langchain-neo4j>=0.9.0",
 ]
 readme = "README.md"
 
