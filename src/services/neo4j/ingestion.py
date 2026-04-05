@@ -14,7 +14,15 @@ from src.services.neo4j.client import Neo4jClient
 
 logger = logging.getLogger(__name__)
 
-# --- CẬP NHẬT: GỘP QUERY THÀNH BATCH VỚI UNWIND ---
+_BATCH_LINK_AUTHORS = """
+UNWIND $papers AS p_data
+MATCH (p:Paper {arxiv_id: p_data.arxiv_id})
+UNWIND p_data.author_names AS author_name
+MERGE (a:Author {name: author_name})
+MERGE (a)-[:WROTE]->(p)
+"""
+
+# --- CÁC QUERY CỦA BẠN ---
 _BATCH_MERGE_PAPER = """
 UNWIND $papers AS p_data
 MERGE (p:Paper {arxiv_id: p_data.arxiv_id})
@@ -27,34 +35,69 @@ SET p.paper_id = p_data.paper_id,
     p.pdf_processed = p_data.pdf_processed
 """
 
-_BATCH_LINK_AUTHORS = """
-UNWIND $papers AS p_data
-MATCH (p:Paper {arxiv_id: p_data.arxiv_id})
-UNWIND p_data.author_names AS author_name
-MERGE (a:Author {name: author_name})
-MERGE (a)-[:WROTE]->(p)
-"""
 
 _BATCH_LINK_REFERENCES = """
 UNWIND $papers AS p_data
-MATCH (p:Paper {arxiv_id: p_data.arxiv_id})
+MERGE (p:Paper {arxiv_id: p_data.arxiv_id})
+WITH p, p_data
 UNWIND p_data.references AS ref_title
-MERGE (r:Reference {title: ref_title})
+WITH p, trim(ref_title) as clean_title
+WHERE clean_title <> "" 
+MERGE (r:Reference {title: clean_title})
 MERGE (p)-[:CITES]->(r)
 """
 
-# --- THÊM ĐOẠN NÀY VÀO ĐÂY ---
+# ĐẢM BẢO DÒNG NÀY TỒN TẠI VÀ KHÔNG BỊ SAI TÊN
 _RESOLVE_CITATIONS_QUERY = """
 MATCH (p1:Paper)-[:CITES]->(r:Reference)
 MATCH (p2:Paper)
-WHERE toLower(p2.title) = toLower(r.title) OR toLower(p2.title) CONTAINS toLower(r.title)
+WHERE toLower(p2.title) = toLower(r.title)
+   OR toLower(p2.title) CONTAINS toLower(r.title)
+   OR (size(p2.title) >= 12 AND toLower(r.title) CONTAINS toLower(p2.title))
 MERGE (p1)-[:CITES_PAPER]->(p2)
-RETURN count(p2) as matched_count
+RETURN count(p2) AS matched_count
 """
 # --------------------------------------------------
 
+# Venue / bibliographic cues after paper title (no quoted title in raw line).
+_REF_STOP_KEYWORDS = [
+    r"\. In\s+",
+    r"\. Proc\.",
+    r"\. arXiv",
+    r"\. IEEE",
+    r"\. Journal",
+    r"\. Scientific",
+    r"\. Microsoft",
+    r"\. https://",
+]
+_REF_STOP_PATTERN = re.compile("|".join(_REF_STOP_KEYWORDS), re.IGNORECASE)
+# Citation style "Author, 'Paper title,' Venue" — prefer segment after comma + quote
+_REF_QUOTED_AFTER_COMMA = re.compile(
+    r",\s*[`'\"“‘„]([^`'\"”’]{6,400})[`'\"”’]",
+    re.DOTALL,
+)
+_REF_QUOTE_PATTERN = re.compile(r"['\"“‘„]([^'\"”’]{6,400})['\"”’]")
+
+
+def _extract_title_from_reference_line(raw_text: str) -> Optional[str]:
+    """Pull a paper title out of a raw bibliography line (often quoted after authors)."""
+    m = _REF_QUOTED_AFTER_COMMA.search(raw_text)
+    if m:
+        t = m.group(1).strip().rstrip(",.")
+        if len(t) >= 6:
+            return t
+    # Any balanced quote pair; prefer the longest plausible inner span
+    candidates: List[str] = []
+    for m in _REF_QUOTE_PATTERN.finditer(raw_text):
+        inner = m.group(1).strip().rstrip(",.")
+        if len(inner) >= 6 and re.search(r"[A-Za-z]", inner):
+            candidates.append(inner)
+    if candidates:
+        return max(candidates, key=len)
+    return None
+
+
 def _paper_to_merge_params(paper: Any) -> Dict[str, Any]:
-    # ... [GIỮ NGUYÊN HOÀN TOÀN HÀM NÀY CỦA BẠN] ...
     authors = getattr(paper, "authors", []) or []
     if not isinstance(authors, list):
         authors = []
@@ -82,30 +125,41 @@ def _paper_to_merge_params(paper: Any) -> Dict[str, Any]:
     raw_refs = getattr(paper, "references", []) or []
     if not isinstance(raw_refs, list):
         raw_refs = []
-        
-    extracted_refs = []
-    title_pattern = re.compile(r"['\"‘“](.*?)['\"’”]")
-    
+
+    extracted_refs: List[str] = []
+
     for r in raw_refs:
-        raw_text = ""
-        if isinstance(r, dict) and "raw_text" in r:
-            raw_text = r["raw_text"]
-        elif isinstance(r, str):
-            raw_text = r
-            
-        if raw_text:
-            match = title_pattern.search(raw_text)
-            if match:
-                title = match.group(1).strip()
-                title = title.rstrip(",.")
-                if len(title) > 15:
-                    extracted_refs.append(title)
+        if isinstance(r, dict):
+            raw_text = r.get("raw_text") or r.get("raw_content") or ""
+        else:
+            raw_text = str(r)
+        raw_text = raw_text.strip()
+        if not raw_text:
+            continue
+        _preview = f"{raw_text[:50]}..." if len(raw_text) > 50 else raw_text
+        logger.info("DEBUG NEO4J: Processing ref text: %s", _preview)
+
+        quoted_title = _extract_title_from_reference_line(raw_text)
+        if quoted_title and len(quoted_title) > 5:
+            extracted_refs.append(quoted_title)
+            continue
+
+        stop_match = _REF_STOP_PATTERN.search(raw_text)
+        if stop_match:
+            content_before_venue = raw_text[: stop_match.start()].strip()
+            parts = content_before_venue.split(". ")
+            if len(parts) > 1:
+                title = parts[-1].strip().rstrip(",.")
             else:
-                title = raw_text.strip()
-                title = re.sub(r"^\s*\[\d+\]\s*", "", title)
-                title = re.sub(r"^\s*\d+\.\s*", "", title)
-                if len(title) > 15:
-                    extracted_refs.append(title[:250])
+                title = content_before_venue.rstrip(",.")
+        else:
+            title = raw_text[:150]
+
+        title = re.sub(r"^\s*\[\d+\]\s*", "", title)
+        title = re.sub(r"^\s*\d+\.\s*", "", title)
+
+        if len(title) > 15:
+            extracted_refs.append(title.strip())
 
     return {
         "arxiv_id": getattr(paper, "arxiv_id", ""),
@@ -117,7 +171,7 @@ def _paper_to_merge_params(paper: Any) -> Dict[str, Any]:
         "categories": [str(c) for c in categories],
         "pdf_processed": bool(is_processed),
         "author_names": [str(a).strip() for a in authors if str(a).strip()],
-        "references": extracted_refs,
+        "references": list(dict.fromkeys(extracted_refs)),
     }
 
 

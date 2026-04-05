@@ -126,17 +126,14 @@ class MetadataFetcher:
                 stored_count = self._store_papers_to_db(papers, pdf_results.get("parsed_papers", {}), db_session)
                 results["papers_stored"] = stored_count
                 
-                if hasattr(self, "neo4j_ingestion") and self.neo4j_ingestion:
+                if sync_to_neo4j and hasattr(self, "neo4j_ingestion") and self.neo4j_ingestion:
                     from src.models.paper import Paper
                     arxiv_ids = [p.arxiv_id for p in papers]
-                    
-                    # --- DÒNG CODE GIẢI BÙA CACHE NẰM Ở ĐÂY ---
-                    # Xóa bộ nhớ đệm, ép SQLAlchemy phải lấy dữ liệu mới nhất từ Postgres
+
                     db_session.expire_all()
-                    # ------------------------------------------
-                    
+
                     db_papers = db_session.query(Paper).filter(Paper.arxiv_id.in_(arxiv_ids)).all()
-                    
+
                     neo_stats = self.neo4j_ingestion.ingest_papers(db_papers)
                     results["papers_synced_neo4j"] = neo_stats["ingested"]
                     logger.info(f"Neo4j graph sync: {neo_stats['ingested']}/{neo_stats['total']} papers")

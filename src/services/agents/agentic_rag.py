@@ -261,9 +261,10 @@ class AgenticRAGService:
                 "use_hybrid": self.graph_config.use_hybrid,
                 "model": model_to_use,
             }
-            # V3 SDK: Use start_as_current_span - will be used with 'with' statement
-            trace = self.langfuse_tracer.client.start_as_current_span(
+            # V3 SDK: start_as_current_observation (start_as_current_span removed in newer SDKs)
+            trace = self.langfuse_tracer.client.start_as_current_observation(
                 name="agentic_rag_request",
+                as_type="span",
             )
 
         # Use proper context manager pattern
@@ -340,7 +341,7 @@ class AgenticRAGService:
 
             # Add CallbackHandler for automatic LLM tracing
             # IMPORTANT: CallbackHandler automatically inherits the current span context
-            # Since we're inside start_as_current_span, it will be linked automatically
+            # Since we're inside start_as_current_observation, it will be linked automatically
             if self.langfuse_tracer and trace:
                 try:
                     # V3 SDK: CallbackHandler() automatically uses current trace context
