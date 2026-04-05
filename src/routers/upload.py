@@ -101,19 +101,18 @@ async def upload_paper(
         if dag_triggered:
             message = f"PDF uploaded. Processing in Airflow (DAG run: {dag_run_id}). Metadata will be extracted from PDF."
         else:
-            message = f"PDF uploaded but Airflow trigger failed. PDF saved at {pdf_path}. Trigger DAG '{dag_id}' manually with conf: {{'arxiv_id': '{arxiv_id}', 'pdf_path': '{pdf_path}'}}"
+            message = (
+                f"PDF uploaded but Airflow trigger failed. PDF saved at {pdf_path}. "
+                f"Trigger DAG '{dag_id}' manually with conf: "
+                f"{{'arxiv_id': '{arxiv_id}', 'pdf_path': '{pdf_path}', 'session_id': '{session_id}'}}"
+            )
         # === HARD-CODE PAPER_ACCESS FOR DEBUG ===
         try:
             from src.repositories.paper_access import PaperAccessRepository
 
             access_repo = PaperAccessRepository(db_session)
 
-            fake_access = access_repo.grant_session_access(
-                subject_type="user",
-                paper_id=arxiv_id,        # dùng filename / arxiv_id
-                session_id=session_id,    # session client gửi lên
-                role="owner",
-            )
+            fake_access = access_repo.grant_session_access(arxiv_id, session_id, session_id)
 
             logger.warning(
                 "[DEBUG] Forced PaperAccess created on upload | "

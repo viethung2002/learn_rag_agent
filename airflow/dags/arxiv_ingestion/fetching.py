@@ -34,6 +34,7 @@ async def run_paper_ingestion_pipeline(
             process_pdfs=process_pdfs,
             store_to_db=True,
             db_session=session,
+            sync_to_neo4j=False,
         )
 
 
@@ -75,6 +76,31 @@ def fetch_daily_papers(**context):
         ti.xcom_push(key="fetch_results", value=results)
 
     return results
+
+
+def sync_daily_to_neo4j(**context):
+    """Đồng bộ các bài báo vừa fetch (và các bản ghi mới nhất) sang Neo4j."""
+    from .common import get_db_service, get_neo4j_service
+    from src.services.neo4j.ingestion import PaperGraphIngestion
+
+    ti = context.get("ti")
+    fetch_results = ti.xcom_pull(key="fetch_results", task_ids="fetch_daily_papers") if ti else None
+
+    if not fetch_results or fetch_results.get("papers_fetched", 0) == 0:
+        logger.info("Không có bài báo mới để đồng bộ sang Neo4j.")
+        return {"ingested": 0, "skipped": True}
+
+    db = get_db_service()
+    neo4j_client = get_neo4j_service()
+    ingestor = PaperGraphIngestion(neo4j_client)
+
+    with db.get_session() as session:
+        stats = ingestor.ingest_from_session(session, limit=100)
+
+    logger.info(f"Đã đồng bộ {stats['ingested']} bài báo sang Neo4j.")
+    if ti:
+        ti.xcom_push(key="neo4j_sync_stats", value=stats)
+    return stats
 
 
 def resolve_citations(**context):
