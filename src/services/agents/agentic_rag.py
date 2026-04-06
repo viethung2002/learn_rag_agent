@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import interrupt
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -60,6 +61,7 @@ class AgenticRAGService:
         langfuse_tracer: Optional[LangfuseTracer] = None,
         graph_config: Optional[GraphConfig] = None,
         mcp_client: Optional[MultiServerMCPClient] = None,
+        checkpointer: Optional[BaseCheckpointSaver] = None,
     ):
         """Initialize agentic RAG service.
 
@@ -68,6 +70,7 @@ class AgenticRAGService:
         :param embeddings_client: Client for embeddings
         :param langfuse_tracer: Optional Langfuse tracer
         :param graph_config: Configuration for graph execution
+        :param checkpointer: LangGraph checkpointer (e.g. AsyncPostgresSaver). Defaults to InMemorySaver.
         """
         self.opensearch = opensearch_client
         self.nvidia = nvidia_client
@@ -75,6 +78,7 @@ class AgenticRAGService:
         self.embeddings = embeddings_client
         self.langfuse_tracer = langfuse_tracer
         self.graph_config = graph_config or GraphConfig()
+        self._checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
         # MCP client for tool execution
         if mcp_client is None:
             self.mcp_client = MultiServerMCPClient({
@@ -86,9 +90,6 @@ class AgenticRAGService:
         else:
             self.mcp_client = mcp_client
 
-
-        self.graph = self._build_graph()
-        logger.info("✓ AgenticRAGService initialized successfully")
         logger.info("Initializing AgenticRAGService with configuration:")
         logger.info(f"  Model: {self.graph_config.model}")
         logger.info(f"  Top-k: {self.graph_config.top_k}")
@@ -96,7 +97,6 @@ class AgenticRAGService:
         logger.info(f"  Max retrieval attempts: {self.graph_config.max_retrieval_attempts}")
         logger.info(f"  Guardrail threshold: {self.graph_config.guardrail_threshold}")
 
-        # Build graph once (no runnables needed!)
         self.graph = self._build_graph()
         logger.info("✓ AgenticRAGService initialized successfully")
 
@@ -215,8 +215,7 @@ class AgenticRAGService:
 
         # Compile graph
         logger.info("Compiling LangGraph workflow")
-        checkpointer = InMemorySaver()
-        compiled_graph = workflow.compile(checkpointer=checkpointer)
+        compiled_graph = workflow.compile(checkpointer=self._checkpointer)
         logger.info("✓ Graph compilation successful")
 
         return compiled_graph

@@ -1,5 +1,7 @@
 from typing import Optional
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
+
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 from src.services.nvidia.client import NvidiaClient
@@ -16,6 +18,7 @@ def make_agentic_rag_service(
     langfuse_tracer: Optional[LangfuseTracer] = None,
     top_k: int = 3,
     use_hybrid: bool = True,
+    checkpointer: Optional[BaseCheckpointSaver] = None,
 ) -> AgenticRAGService:
     """
     Create AgenticRAGService with dependency injection.
@@ -27,6 +30,7 @@ def make_agentic_rag_service(
         langfuse_tracer: Optional Langfuse tracer for observability
         top_k: Number of documents to retrieve (default: 3)
         use_hybrid: Use hybrid search (default: True)
+        checkpointer: Optional LangGraph checkpointer (Postgres in production)
 
     Returns:
         Configured AgenticRAGService instance
@@ -43,4 +47,5 @@ def make_agentic_rag_service(
         embeddings_client=embeddings_client,
         langfuse_tracer=langfuse_tracer,
         graph_config=graph_config,
+        checkpointer=checkpointer,
     )

@@ -56,6 +56,7 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - POSTGRES_SERVER=postgres
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
+      - LANGGRAPH_CHECKPOINT_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/langgraph_checkpoint
       - LANGFUSE_HOST=http://langfuse-web:3000 
       - LANGFUSE_DEBUG=true
       - REDIS__HOST=redis
