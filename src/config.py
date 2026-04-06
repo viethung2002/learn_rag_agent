@@ -199,6 +199,11 @@ class Settings(BaseConfigSettings):
     postgres_pool_size: int = 20
     postgres_max_overflow: int = 0
 
+    # LangGraph AsyncPostgresSaver (psycopg3). Dùng DB riêng; tạo bởi init-db/01-init-dbs.sh
+    langgraph_checkpoint_database_url: str = (
+        "postgresql://rag_user:rag_password@localhost:5432/langgraph_checkpoint"
+    )
+
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.2:1b"
     ollama_timeout: int = 300
@@ -228,8 +233,29 @@ class Settings(BaseConfigSettings):
     @field_validator("postgres_database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
-        if not (v.startswith("postgresql://") or v.startswith("postgresql+psycopg2://")):
-            raise ValueError("Database URL must start with 'postgresql://' or 'postgresql+psycopg2://'")
+        if not (
+            v.startswith("postgresql://")
+            or v.startswith("postgresql+psycopg2://")
+            or v.startswith("postgresql+psycopg://")
+        ):
+            raise ValueError(
+                "Database URL must start with 'postgresql://', "
+                "'postgresql+psycopg2://', or 'postgresql+psycopg://'"
+            )
+        return v
+
+    @field_validator("langgraph_checkpoint_database_url")
+    @classmethod
+    def validate_langgraph_checkpoint_url(cls, v: str) -> str:
+        if not (
+            v.startswith("postgresql://")
+            or v.startswith("postgresql+psycopg2://")
+            or v.startswith("postgresql+psycopg://")
+        ):
+            raise ValueError(
+                "LangGraph checkpoint URL must start with 'postgresql://', "
+                "'postgresql+psycopg2://', or 'postgresql+psycopg://'"
+            )
         return v
 
 

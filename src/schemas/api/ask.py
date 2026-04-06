@@ -53,6 +53,14 @@ class AgenticAskResponse(AskResponse):
     reasoning_steps: List[str] = Field(..., description="Agent's decision-making steps")
     retrieval_attempts: int = Field(..., description="Number of document retrieval attempts")
     trace_id: Optional[str] = Field(None, description="Langfuse trace ID for feedback and debugging")
+    thread_id: Optional[str] = Field(
+        None,
+        description="Conversation thread id (persisted history); send on the next turn to continue",
+    )
+    rewritten_query: Optional[str] = Field(
+        None,
+        description="If the agent rewrote the query before retrieval",
+    )
 
     class Config:
         json_schema_extra = {
@@ -69,6 +77,8 @@ class AgenticAskResponse(AskResponse):
                 ],
                 "retrieval_attempts": 1,
                 "trace_id": "abc123-def456-ghi789",
+                "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+                "rewritten_query": None,
             }
         }
 

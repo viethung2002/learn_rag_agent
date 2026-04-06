@@ -34,6 +34,15 @@ from src.services.neo4j.factory import make_neo4j_client, make_neo4j_driver
 
 from src.services.pdf_parser.factory import make_pdf_parser_service
 from src.services.telegram.factory import make_telegram_service
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+
+from src.services.agents.checkpoint_utils import (
+    ensure_checkpoint_database_exists,
+    mask_conninfo_for_log,
+    to_psycopg_conninfo,
+)
 from src.services.agents.factory import make_agentic_rag_service
 
 
@@ -133,12 +142,32 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Telegram bot not configured - skipping initialization")
     
-    # Initialize Agentic
+    # LangGraph checkpoints → PostgreSQL (DB langgraph_checkpoint, bảng tạo bởi AsyncPostgresSaver.setup)
+    checkpoint_conninfo = to_psycopg_conninfo(settings.langgraph_checkpoint_database_url)
+    logger.info(
+        "LangGraph checkpoint DB: %s",
+        mask_conninfo_for_log(checkpoint_conninfo),
+    )
+    await ensure_checkpoint_database_exists(checkpoint_conninfo)
+    langgraph_checkpoint_pool = AsyncConnectionPool(
+        conninfo=checkpoint_conninfo,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=False,
+        min_size=1,
+        max_size=10,
+        name="langgraph-checkpoint",
+    )
+    await langgraph_checkpoint_pool.open()
+    langgraph_checkpointer = AsyncPostgresSaver(conn=langgraph_checkpoint_pool)
+    await langgraph_checkpointer.setup()
+    app.state.langgraph_checkpoint_pool = langgraph_checkpoint_pool
+
     app.state.agentic_rag = make_agentic_rag_service(
         opensearch_client=app.state.opensearch_client,
         nvidia_client=app.state.nvidia_client,
         embeddings_client=app.state.embeddings_service,
         langfuse_tracer=app.state.langfuse_tracer,
+        checkpointer=langgraph_checkpointer,
     )
 
     logger.info("API ready")
@@ -156,6 +185,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Error closing Neo4j client: %s", e)
         make_neo4j_driver.cache_clear()
+
+    checkpoint_pool = getattr(app.state, "langgraph_checkpoint_pool", None)
+    if checkpoint_pool is not None:
+        await checkpoint_pool.close()
+        logger.info("LangGraph checkpoint pool closed")
 
     database.teardown()
     logger.info("API shutdown complete")

@@ -29,6 +29,7 @@ fileConfig(config.config_file_name)
 from src.models.item.schema import SQLModel  # noqa
 from src.models.user.schema import SQLModel  # noqa
 from src.models.paper_access.schema import SQLModel  # noqa
+from src.models.agent_chat.schema import AgentChatConversation, AgentChatMessage  # noqa: F401
 from src.core.config import settings # noqa
 
 target_metadata = SQLModel.metadata

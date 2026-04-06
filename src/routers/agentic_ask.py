@@ -1,9 +1,18 @@
 import logging
+import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from src.dependencies import AgenticRAGDep, LangfuseDep, CacheDep
 from src.schemas.api.ask import AgenticAskResponse, AskRequest, FeedbackRequest, FeedbackResponse
+from src.schemas.api.agent_chat import (
+    AgentChatConversationPublic,
+    AgentChatConversationsResponse,
+    AgentChatMessagePublic,
+    AgentChatMessagesResponse,
+    AgentChatThreadIdsResponse,
+)
 from src.api.deps import CurrentUser, SessionDep
+from src.crud import agent_chat as agent_chat_crud
 
 router = APIRouter(prefix="/api/v1", tags=["agentic-rag"])
 logger = logging.getLogger(__name__)
@@ -43,20 +52,45 @@ async def ask_agentic(
         HTTPException: If processing fails
     """
     try:
-        cached_response = None
+        thread_id = request.thread_id or str(uuid.uuid4())
+
         if cache_client:
             try:
                 cached_response = await cache_client.find_cached_response(request)
                 if cached_response:
                     logger.info("Returning cached response for exact query match")
-                    return cached_response
+                    data = dict(cached_response)
+                    data["thread_id"] = thread_id
+                    response = AgenticAskResponse.model_validate(data)
+                    try:
+                        agent_chat_crud.append_turn(
+                            session,
+                            user_id=current_user.id,
+                            thread_id=thread_id,
+                            user_content=request.query,
+                            assistant_content=response.answer,
+                            trace_id=response.trace_id,
+                            extra={
+                                "sources": response.sources,
+                                "reasoning_steps": response.reasoning_steps,
+                                "retrieval_attempts": response.retrieval_attempts,
+                                "cache_hit": True,
+                            },
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to persist agent chat history for cached response: %s",
+                            e,
+                        )
+                        session.rollback()
+                    return response
             except Exception as e:
                 logger.warning(f"Cache check failed, proceeding with normal flow: {e}")
-        
+
         result = await agentic_rag.ask(
             query=request.query,
             model=request.model,
-            thread_id=request.thread_id,
+            thread_id=thread_id,
         )
 
         response = AgenticAskResponse(
@@ -68,22 +102,121 @@ async def ask_agentic(
             reasoning_steps=result.get("reasoning_steps", []),
             retrieval_attempts=result.get("retrieval_attempts", 0),
             trace_id=result.get("trace_id"),
+            thread_id=thread_id,
+            rewritten_query=result.get("rewritten_query"),
         )
-        
-        # Store response in exact match cache
+
+        try:
+            agent_chat_crud.append_turn(
+                session,
+                user_id=current_user.id,
+                thread_id=thread_id,
+                user_content=request.query,
+                assistant_content=result["answer"],
+                trace_id=result.get("trace_id"),
+                extra={
+                    "sources": result.get("sources"),
+                    "reasoning_steps": result.get("reasoning_steps"),
+                    "retrieval_attempts": result.get("retrieval_attempts"),
+                },
+            )
+        except Exception as e:
+            logger.warning("Failed to persist agent chat history: %s", e)
+            session.rollback()
+
         if cache_client:
             try:
                 await cache_client.store_response(request, response)
             except Exception as e:
                 logger.warning(f"Failed to store response in cache: {e}")
-        
-        return response
 
+        return response
 
     except ValueError as e:  
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+
+
+@router.get("/agentic/conversations", response_model=AgentChatConversationsResponse)
+def list_agentic_conversations(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentChatConversationsResponse:
+    """List agent chat threads for the current user (newest first)."""
+    total = agent_chat_crud.count_user_conversations(
+        session, user_id=current_user.id
+    )
+    rows = agent_chat_crud.list_conversations(
+        session, user_id=current_user.id, skip=skip, limit=limit
+    )
+    return AgentChatConversationsResponse(
+        data=[AgentChatConversationPublic.model_validate(r) for r in rows],
+        total=total,
+    )
+
+
+@router.get(
+    "/agentic/conversations/thread_ids",
+    response_model=list[str],
+)
+def list_agentic_conversation_thread_ids(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+) -> list[str]:
+    """Return thread_id values for the current user (newest first)."""
+    return agent_chat_crud.list_thread_ids(session, user_id=current_user.id, skip=skip, limit=limit)
+
+
+@router.get("/agentic/thread-ids", response_model=AgentChatThreadIdsResponse)
+def list_agentic_thread_ids(
+    session: SessionDep,
+    current_user: CurrentUser,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> AgentChatThreadIdsResponse:
+    """List persisted thread_ids for the current user."""
+    rows = agent_chat_crud.list_conversations(
+        session, user_id=current_user.id, skip=skip, limit=limit
+    )
+    total = agent_chat_crud.count_user_conversations(
+        session, user_id=current_user.id
+    )
+    return AgentChatThreadIdsResponse(
+        thread_ids=[row.thread_id for row in rows],
+        total=total,
+    )
+
+
+@router.get(
+    "/agentic/conversations/{thread_id}/messages",
+    response_model=AgentChatMessagesResponse,
+)
+def get_agentic_conversation_messages(
+    thread_id: str,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> AgentChatMessagesResponse:
+    """Load persisted user/assistant messages for one thread."""
+    tid = thread_id.strip()
+    if not tid or len(tid) > 255:
+        raise HTTPException(
+            status_code=422,
+            detail="thread_id must be 1–255 characters",
+        )
+    msgs = agent_chat_crud.list_messages_for_thread(
+        session, user_id=current_user.id, thread_id=tid
+    )
+    if msgs is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return AgentChatMessagesResponse(
+        thread_id=tid,
+        messages=[AgentChatMessagePublic.model_validate(m) for m in msgs],
+    )
 
 
 @router.post("/feedback", response_model=FeedbackResponse)
@@ -153,4 +286,3 @@ async def human_review_should_retrieve(
     """
     Human-in-the-loop review for should_retrieve decision
     """
-
