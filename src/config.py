@@ -188,6 +188,24 @@ class AirflowSettings(BaseConfigSettings):
     password: str = "admin"
 
 
+class EvaluationSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="EVALUATION__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    enabled: bool = False
+    run_ragas: bool = True
+    run_llm_judge: bool = True
+    judge_provider: Literal["ollama", "nvidia"] = "ollama"
+    judge_model: str = "llama3.2:1b"
+    require_reference: bool = False
+    max_contexts: int = 5
+
+
 class Settings(BaseConfigSettings):
     app_version: str = "0.1.0"
     debug: bool = True
@@ -229,6 +247,7 @@ class Settings(BaseConfigSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)
+    evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
 
     @field_validator("postgres_database_url")
     @classmethod

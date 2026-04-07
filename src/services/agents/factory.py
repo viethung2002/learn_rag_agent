@@ -5,6 +5,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 from src.services.nvidia.client import NvidiaClient
+from src.services.neo4j.client import Neo4jClient
 from src.services.opensearch.client import OpenSearchClient
 
 from .agentic_rag import AgenticRAGService
@@ -13,6 +14,7 @@ from .config import GraphConfig
 
 def make_agentic_rag_service(
     opensearch_client: OpenSearchClient,
+    neo4j_client: Optional[Neo4jClient],
     nvidia_client: NvidiaClient,
     embeddings_client: JinaEmbeddingsClient,
     langfuse_tracer: Optional[LangfuseTracer] = None,
@@ -25,6 +27,7 @@ def make_agentic_rag_service(
 
     Args:
         opensearch_client: Client for document search
+        neo4j_client: Client for graph facts enrichment
         ollama_client: Client for LLM generation
         embeddings_client: Client for embeddings
         langfuse_tracer: Optional Langfuse tracer for observability
@@ -43,6 +46,7 @@ def make_agentic_rag_service(
 
     return AgenticRAGService(
         opensearch_client=opensearch_client,
+        neo4j_client=neo4j_client,
         nvidia_client=nvidia_client,
         embeddings_client=embeddings_client,
         langfuse_tracer=langfuse_tracer,

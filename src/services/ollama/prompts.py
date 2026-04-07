@@ -52,6 +52,21 @@ class RAGPromptBuilder:
             # Only include minimal metadata - just arxiv_id for citation
             prompt += f"[{i}. arXiv:{arxiv_id}]\n"
             prompt += f"{chunk_text}\n\n"
+            # Include graph facts if available
+            graph_facts = chunk.get("graph_facts") or []
+            if graph_facts:
+                prompt += "Graph facts:\n"
+                for gf in graph_facts:
+                    rel = gf.get("rel_type") or "RELATED_TO"
+                    labels = ",".join(gf.get("obj_labels", []))
+                    props = gf.get("obj_props", {}) or {}
+                    # Prefer readable property like title or name
+                    title = props.get("title") or props.get("name")
+                    if title:
+                        prompt += f"- {rel} -> {title} ({labels})\n"
+                    else:
+                        prompt += f"- {rel} -> {labels} {props}\n"
+                prompt += "\n"
 
         prompt += f"### Question:\n{query}\n\n"
         prompt += (

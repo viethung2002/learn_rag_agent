@@ -9,18 +9,21 @@ from .client import OpenSearchClient
 
 
 @lru_cache(maxsize=1)
+def _make_opensearch_client_cached() -> OpenSearchClient:
+    """Internal cached creator that does not take Settings as argument to avoid
+    passing unhashable Pydantic objects into lru_cache."""
+    settings = get_settings()
+    return OpenSearchClient(host=settings.opensearch.host, settings=settings)
+
+
 def make_opensearch_client(settings: Optional[Settings] = None) -> OpenSearchClient:
     """Factory function to create cached OpenSearch client.
 
-    Uses lru_cache to maintain a singleton instance for efficiency.
-
-    :param settings: Optional settings instance
-    :returns: Cached OpenSearchClient instance
+    Accepts an optional Settings object for API compatibility but uses an
+    internal zero-argument cached creator so the cached key remains hashable.
     """
-    if settings is None:
-        settings = get_settings()
-
-    return OpenSearchClient(host=settings.opensearch.host, settings=settings)
+    # We ignore the passed Settings for caching purposes; use the internal cached instance
+    return _make_opensearch_client_cached()
 
 
 def make_opensearch_client_fresh(settings: Optional[Settings] = None, host: Optional[str] = None) -> OpenSearchClient:

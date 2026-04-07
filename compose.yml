@@ -49,6 +49,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./data/user_uploads:/app/data/user_uploads
+      - ./data/eval:/app/data/eval
     environment:
       # Container-specific overrides
       - OPENSEARCH_HOST=http://opensearch:9200

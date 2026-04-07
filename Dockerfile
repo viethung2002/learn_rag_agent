@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Copy configuration files
 COPY pyproject.toml uv.lock ./
-
+COPY scripts /app/scripts
 # UV_COMPILE_BYTECODE for generating .pyc files -> faster application startup.
 # UV_LINK_MODE=copy to silence warnings about not being able to use hard links
 # since the cache and sync target are on separate file systems.

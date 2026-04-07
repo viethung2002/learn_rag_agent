@@ -182,24 +182,6 @@ class AgentChatCRUD:
         )
         return list(session.exec(statement).all())
 
-    def list_thread_ids(
-        self,
-        session: Session,
-        *,
-        user_id: uuid.UUID,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[str]:
-        """Return a list of thread_id strings for a user's conversations (newest first)."""
-        statement = (
-            select(AgentChatConversation.thread_id)
-            .where(AgentChatConversation.user_id == user_id)
-            .order_by(AgentChatConversation.updated_at.desc())
-            .offset(skip)
-            .limit(limit)
-        )
-        return list(session.exec(statement).all())
-
     def list_messages_for_thread(
         self,
         session: Session,

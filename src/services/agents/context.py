@@ -6,6 +6,7 @@ from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 # from src.services.ollama.client import OllamaClient
 from src.services.nvidia.client import NvidiaClient
+from src.services.neo4j.client import Neo4jClient
 from src.services.opensearch.client import OpenSearchClient
 
 
@@ -31,6 +32,7 @@ class Context:
     # ollama_client: OllamaClient
     nvidia_client: NvidiaClient
     opensearch_client: OpenSearchClient
+    neo4j_client: Optional[Neo4jClient]
     embeddings_client: JinaEmbeddingsClient
     langfuse_tracer: Optional[LangfuseTracer]
     trace: Optional["LangfuseSpan"] = None

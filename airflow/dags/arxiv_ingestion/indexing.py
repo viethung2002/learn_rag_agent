@@ -2,15 +2,13 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from src.db.factory import make_database
-from src.services.indexing.factory import make_hybrid_indexing_service
-from src.services.opensearch.factory import make_opensearch_client_fresh
-
 logger = logging.getLogger(__name__)
 
 
 async def _index_papers_with_chunks(papers):
     """Async helper to index papers with chunking and embeddings."""
+    from src.services.indexing.factory import make_hybrid_indexing_service
+
     indexing_service = make_hybrid_indexing_service()
 
     papers_data = []
@@ -47,6 +45,8 @@ def index_papers_hybrid(**context):
     4. Indexes chunks with embeddings into OpenSearch
     """
     try:
+        from src.db.factory import make_database
+
         database = make_database()
 
         ti = context.get("ti")
@@ -93,6 +93,8 @@ def index_papers_hybrid(**context):
 def verify_hybrid_index(**context):
     """Verify hybrid index health and get statistics."""
     try:
+        from src.services.opensearch.factory import make_opensearch_client_fresh
+
         opensearch_client = make_opensearch_client_fresh()
 
         stats = opensearch_client.client.indices.stats(index=opensearch_client.index_name)
