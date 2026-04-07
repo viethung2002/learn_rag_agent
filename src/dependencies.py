@@ -16,6 +16,7 @@ from src.db.interfaces.base import BaseDatabase
 from src.services.arxiv.client import ArxivClient
 from src.services.cache.client import CacheClient
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
+from src.services.evaluation.service import EvaluationService
 from src.services.langfuse.client import LangfuseTracer
 from src.services.ollama.client import OllamaClient
 from src.services.gemini.client import GeminiClient
@@ -98,6 +99,11 @@ def get_cache_client(request: Request) -> CacheClient | None:
     return getattr(request.app.state, "cache_client", None)
 
 
+def get_evaluation_service(request: Request) -> EvaluationService | None:
+    """Get evaluation service from the request state."""
+    return getattr(request.app.state, "evaluation_service", None)
+
+
 def get_telegram_service(request: Request) -> Optional[TelegramBot]:
     """Get Telegram service from the request state."""
     return getattr(request.app.state, "telegram_service", None)
@@ -121,5 +127,6 @@ GeminiDep = Annotated[GeminiClient, Depends(get_gemini_client)]  # Assuming Gemi
 NvidiaDep = Annotated[NvidiaClient, Depends(get_nvidia_client)]
 LangfuseDep = Annotated[LangfuseTracer, Depends(get_langfuse_tracer)]
 CacheDep = Annotated[CacheClient | None, Depends(get_cache_client)]
+EvaluationDep = Annotated[EvaluationService | None, Depends(get_evaluation_service)]
 TelegramDep = Annotated[Optional[TelegramBot], Depends(get_telegram_service)]
 AgenticRAGDep = Annotated[AgenticRAGService, Depends(get_agentic_rag_service)]

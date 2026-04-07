@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, Mock
 from sqlmodel import Session, SQLModel, create_engine
+from sqlalchemy.pool import StaticPool
 
 from src.services.agents.agentic_rag import AgenticRAGService
 from src import dependencies
@@ -29,6 +30,10 @@ def mock_agentic_rag_service():
         ],
         "retrieval_attempts": 1,
         "rewritten_query": None,
+        "neo4j_attempted": False,
+        "used_neo4j": False,
+        "graph_enriched_docs": 0,
+        "graph_enriched_arxiv_ids": [],
     })
     return service
 
@@ -39,6 +44,7 @@ def client(mock_agentic_rag_service):
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(
         engine,
@@ -127,6 +133,8 @@ class TestAgenticAskEndpoint:
         assert len(data["reasoning_steps"]) > 0
         assert data["retrieval_attempts"] == 1
         assert data.get("thread_id")
+        assert data["neo4j_attempted"] is False
+        assert data["used_neo4j"] is False
 
     def test_ask_agentic_minimal_request(self, client, mock_agentic_rag_service):
         """Test agentic RAG with minimal required fields."""
@@ -240,6 +248,33 @@ class TestAgenticAskEndpoint:
         assert data["rewritten_query"] == "What are the key concepts in machine learning?"
         assert data["retrieval_attempts"] == 2
 
+    def test_ask_agentic_exposes_neo4j_status_flags(self, client, mock_agentic_rag_service):
+        """Test Neo4j status flags distinguish attempted vs enriched."""
+        mock_agentic_rag_service.ask = AsyncMock(return_value={
+            "query": "What graph facts support transformers?",
+            "answer": "Transformers connect attention mechanisms to sequence modeling papers.",
+            "sources": ["https://arxiv.org/pdf/1706.03762.pdf"],
+            "reasoning_steps": ["Retrieved papers", "Enriched with graph facts", "Generated answer"],
+            "retrieval_attempts": 1,
+            "rewritten_query": None,
+            "neo4j_attempted": True,
+            "used_neo4j": True,
+            "graph_enriched_docs": 1,
+            "graph_enriched_arxiv_ids": ["1706.03762"],
+        })
+
+        response = client.post(
+            "/api/v1/ask-agentic",
+            json={"query": "What graph facts support transformers?"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["neo4j_attempted"] is True
+        assert data["used_neo4j"] is True
+        assert data["graph_enriched_docs"] == 1
+        assert data["graph_enriched_arxiv_ids"] == ["1706.03762"]
+
     def test_ask_agentic_custom_model(self, client, mock_agentic_rag_service):
         """Test agentic RAG with custom model parameter."""
         response = client.post(
@@ -301,8 +336,8 @@ class TestAgenticAskEndpoint:
         assert payload["messages"][0]["content"] == "hello"
         assert payload["messages"][1]["role"] == "assistant"
 
-    def test_list_thread_ids_after_ask(self, client, mock_agentic_rag_service):
-        """Persisted history: POST ask then GET thread ids."""
+    def test_list_conversations_after_ask(self, client, mock_agentic_rag_service):
+        """Persisted history: POST ask then GET conversations."""
         r1 = client.post(
             "/api/v1/ask-agentic",
             json={"query": "list my threads", "model": "deepseek-ai/deepseek-v3.2"},
@@ -310,8 +345,8 @@ class TestAgenticAskEndpoint:
         assert r1.status_code == 200
         tid = r1.json()["thread_id"]
 
-        r2 = client.get("/api/v1/agentic/thread-ids")
+        r2 = client.get("/api/v1/agentic/conversations")
         assert r2.status_code == 200
         payload = r2.json()
         assert payload["total"] >= 1
-        assert tid in payload["thread_ids"]
+        assert any(row["thread_id"] == tid for row in payload["data"])

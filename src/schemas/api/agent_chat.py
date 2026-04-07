@@ -33,11 +33,6 @@ class AgentChatConversationsResponse(BaseModel):
     total: int
 
 
-class AgentChatThreadIdsResponse(BaseModel):
-    thread_ids: list[str]
-    total: int
-
-
 class AgentChatMessagesResponse(BaseModel):
     thread_id: str
     messages: list[AgentChatMessagePublic]

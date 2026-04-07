@@ -5,6 +5,7 @@ import asyncio
 from src.services.langfuse.factory import make_langfuse_tracer
 from src.services.embeddings.factory import make_embeddings_client
 from src.services.nvidia.factory import make_nvidia_client
+from src.services.neo4j.factory import make_neo4j_client
 from src.services.opensearch.factory import make_opensearch_client
 from src.services.agents.factory import make_agentic_rag_service
 
@@ -14,11 +15,13 @@ from src.services.embeddings.jina_client import JinaEmbeddingsClient
 async def main():
 
     opensearch_client = make_opensearch_client()  
+    neo4j_client = make_neo4j_client()
     nvidia_client = make_nvidia_client()
     embeddings_client = make_embeddings_client()
     langfuse=make_langfuse_tracer()
     service = make_agentic_rag_service(
         opensearch_client=opensearch_client,
+        neo4j_client=neo4j_client,
         nvidia_client=nvidia_client,
         embeddings_client=embeddings_client,
         langfuse_tracer=langfuse,
@@ -27,7 +30,7 @@ async def main():
     )
     for i in range(2):
         query = input("\nCâu hỏi về paper arXiv: ").strip()
-        result = await service.ask(query=query)
+        result = await service.ask(query=query, prompt_on_empty=True)
 
 
 if __name__ == "__main__":

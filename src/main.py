@@ -25,6 +25,7 @@ from src.routers import agentic_ask, hybrid_search, ping, upload
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
 from src.services.embeddings.factory import make_embeddings_service
+from src.services.evaluation.factory import make_evaluation_service
 from src.services.langfuse.factory import make_langfuse_tracer
 from src.services.ollama.factory import make_ollama_client
 from src.services.gemini.factory import make_gemini_client
@@ -121,6 +122,11 @@ async def lifespan(app: FastAPI):
     app.state.nvidia_client = make_nvidia_client()
     app.state.langfuse_tracer = make_langfuse_tracer()
     app.state.cache_client = make_cache_client(settings)
+    app.state.evaluation_service = make_evaluation_service(
+        settings=settings,
+        nvidia_client=app.state.nvidia_client,
+        langfuse_tracer=app.state.langfuse_tracer,
+    )
     logger.info("Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, Ollama, Langfuse, Cache")
 
     # Initialize Telegram bot (Week 7)
@@ -164,6 +170,7 @@ async def lifespan(app: FastAPI):
 
     app.state.agentic_rag = make_agentic_rag_service(
         opensearch_client=app.state.opensearch_client,
+        neo4j_client=app.state.neo4j_client,
         nvidia_client=app.state.nvidia_client,
         embeddings_client=app.state.embeddings_service,
         langfuse_tracer=app.state.langfuse_tracer,

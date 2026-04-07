@@ -2,17 +2,18 @@ import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
-from src.dependencies import AgenticRAGDep, LangfuseDep, CacheDep
+from src.dependencies import AgenticRAGDep, CacheDep, EvaluationDep, LangfuseDep
 from src.schemas.api.ask import AgenticAskResponse, AskRequest, FeedbackRequest, FeedbackResponse
+from src.schemas.api.ask import WebSearchConsentRequest, WebSearchConsentResponse
 from src.schemas.api.agent_chat import (
     AgentChatConversationPublic,
     AgentChatConversationsResponse,
     AgentChatMessagePublic,
     AgentChatMessagesResponse,
-    AgentChatThreadIdsResponse,
 )
 from src.api.deps import CurrentUser, SessionDep
 from src.crud import agent_chat as agent_chat_crud
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 router = APIRouter(prefix="/api/v1", tags=["agentic-rag"])
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ async def ask_agentic(
     request: AskRequest,
     agentic_rag: AgenticRAGDep,
     cache_client: CacheDep,
+    evaluation_service: EvaluationDep,
     session: SessionDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
 ) -> AgenticAskResponse:
     """
@@ -93,6 +95,19 @@ async def ask_agentic(
             thread_id=thread_id,
         )
 
+        evaluation = None
+        if evaluation_service:
+            evaluation = await evaluation_service.evaluate_answer(
+                query=result["query"],
+                answer=result["answer"],
+                contexts=result.get("retrieved_contexts", []),
+                metadata={
+                    "endpoint": "ask-agentic",
+                    "model": request.model,
+                    "thread_id": thread_id,
+                },
+            )
+
         response = AgenticAskResponse(
             query=result["query"],
             answer=result["answer"],
@@ -104,6 +119,11 @@ async def ask_agentic(
             trace_id=result.get("trace_id"),
             thread_id=thread_id,
             rewritten_query=result.get("rewritten_query"),
+            neo4j_attempted=result.get("neo4j_attempted", False),
+            used_neo4j=result.get("used_neo4j", False),
+            graph_enriched_docs=result.get("graph_enriched_docs", 0),
+            graph_enriched_arxiv_ids=result.get("graph_enriched_arxiv_ids", []),
+            evaluation=evaluation,
         )
 
         try:
@@ -118,6 +138,10 @@ async def ask_agentic(
                     "sources": result.get("sources"),
                     "reasoning_steps": result.get("reasoning_steps"),
                     "retrieval_attempts": result.get("retrieval_attempts"),
+                    "neo4j_attempted": result.get("neo4j_attempted", False),
+                    "used_neo4j": result.get("used_neo4j", False),
+                    "graph_enriched_docs": result.get("graph_enriched_docs", 0),
+                    "graph_enriched_arxiv_ids": result.get("graph_enriched_arxiv_ids", []),
                 },
             )
         except Exception as e:
@@ -154,40 +178,6 @@ def list_agentic_conversations(
     )
     return AgentChatConversationsResponse(
         data=[AgentChatConversationPublic.model_validate(r) for r in rows],
-        total=total,
-    )
-
-
-@router.get(
-    "/agentic/conversations/thread_ids",
-    response_model=list[str],
-)
-def list_agentic_conversation_thread_ids(
-    session: SessionDep,
-    current_user: CurrentUser,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-) -> list[str]:
-    """Return thread_id values for the current user (newest first)."""
-    return agent_chat_crud.list_thread_ids(session, user_id=current_user.id, skip=skip, limit=limit)
-
-
-@router.get("/agentic/thread-ids", response_model=AgentChatThreadIdsResponse)
-def list_agentic_thread_ids(
-    session: SessionDep,
-    current_user: CurrentUser,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-) -> AgentChatThreadIdsResponse:
-    """List persisted thread_ids for the current user."""
-    rows = agent_chat_crud.list_conversations(
-        session, user_id=current_user.id, skip=skip, limit=limit
-    )
-    total = agent_chat_crud.count_user_conversations(
-        session, user_id=current_user.id
-    )
-    return AgentChatThreadIdsResponse(
-        thread_ids=[row.thread_id for row in rows],
         total=total,
     )
 
@@ -286,3 +276,53 @@ async def human_review_should_retrieve(
     """
     Human-in-the-loop review for should_retrieve decision
     """
+
+
+@router.post("/agentic/web-search-consent", response_model=WebSearchConsentResponse)
+async def agentic_web_search_consent(
+    request: WebSearchConsentRequest,
+    agentic_rag: AgenticRAGDep,
+    session: SessionDep,
+    current_user: CurrentUser,
+):
+    """Run the MCP `web_search` tool after explicit user consent.
+
+    The frontend should call this endpoint when it receives `needs_web_search`.
+    """
+    try:
+        if not request.consent:
+            return WebSearchConsentResponse(success=False, summary=None, message="User declined web search")
+
+        # Open MCP session and load tools
+        async with agentic_rag.mcp_client.session("arxiv-tools") as mcp_session:
+            tools = await load_mcp_tools(mcp_session)
+            tools_by_name = {t.name: t for t in tools}
+
+            web_tool = tools_by_name.get("web_search")
+            if not web_tool:
+                return WebSearchConsentResponse(success=False, summary=None, message="web_search tool not available")
+
+            # Invoke the web_search tool
+            web_res = await web_tool.ainvoke({"query": request.query})
+
+            # Normalize summary
+            summary = web_res if isinstance(web_res, str) else str(web_res)
+
+            # Persist as assistant turn in chat history
+            try:
+                agent_chat_crud.append_turn(
+                    session,
+                    user_id=current_user.id,
+                    thread_id=request.thread_id or "",
+                    user_content=f"[User consented to web search] {request.query}",
+                    assistant_content=summary,
+                    trace_id=None,
+                    extra={"source": "web_search"},
+                )
+            except Exception:
+                session.rollback()
+
+            return WebSearchConsentResponse(success=True, summary=summary, message="Web search completed")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to run web search: {e}")
