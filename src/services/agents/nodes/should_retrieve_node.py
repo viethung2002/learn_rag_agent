@@ -15,6 +15,19 @@ from ..state import AgentState
 
 logger = logging.getLogger(__name__)
 
+_FORCE_RETRIEVE_MARKERS = (
+    "citation",
+    "citations",
+    "reference",
+    "references",
+    "bibliography",
+    "shared citations",
+    "shared references",
+    "common citations",
+    "common references",
+    "cited by",
+)
+
 
 
 
@@ -36,6 +49,15 @@ async def ainvoke_should_retrieve_step(
     
     query = get_latest_query(state["messages"])
     old_message = get_old_message(state["messages"])
+    lowered = query.lower()
+
+    if any(marker in lowered for marker in _FORCE_RETRIEVE_MARKERS):
+        decision = ShouldRetrieveDecision(
+            should_retrieve=True,
+            reason="Forced retrieval for citation/reference graph query.",
+        )
+        logger.info("Should-retrieve heuristic forced retrieval: %s", decision.reason)
+        return {"should_retrieve_result": decision}
     
     # Prompt yêu cầu LLM quyết định có cần retrieve hay không
     should_retrieve_prompt = SHOULD_RETRIEVE_PROMPT.format(question=query, old_message=old_message)
