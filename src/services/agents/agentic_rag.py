@@ -27,12 +27,14 @@ from .context import Context
 from .nodes import (
     ainvoke_generate_answer_step,
     ainvoke_grade_documents_step,
+    ainvoke_graph_citation_retrieve_step,
     ainvoke_guardrail_step,
     ainvoke_out_of_scope_step,
     ainvoke_retrieve_step,
     ainvoke_rewrite_query_step,
     continue_after_guardrail,
     ainvoke_should_retrieve_step,
+    route_after_graph_citation_retrieve,
     route_after_should_retrieve,
     ainvoke_rerank_documents_step
 )
@@ -403,6 +405,7 @@ class AgenticRAGService:
         logger.info("Adding nodes to workflow graph")
         workflow.add_node("guardrail", ainvoke_guardrail_step)
         workflow.add_node("out_of_scope", ainvoke_out_of_scope_step)
+        workflow.add_node("graph_citation_retrieve", ainvoke_graph_citation_retrieve_step)
         workflow.add_node("retrieve", ainvoke_retrieve_step)
         workflow.add_node("tool_retrieve", tool_node)
         # workflow.add_node("tool_retrieve", ToolNode(tools))
@@ -432,11 +435,20 @@ class AgenticRAGService:
             route_after_should_retrieve,
             {
                 "generate_answer": "generate_answer",
-                "retrieve": "retrieve",
+                "retrieve": "graph_citation_retrieve",
             },
         )
         # Out of scope → END
         workflow.add_edge("out_of_scope", END)
+
+        workflow.add_conditional_edges(
+            "graph_citation_retrieve",
+            route_after_graph_citation_retrieve,
+            {
+                "rerank": "rerank",
+                "retrieve": "retrieve",
+            },
+        )
 
         # Retrieve node creates tool call
         workflow.add_conditional_edges(
@@ -463,7 +475,7 @@ class AgenticRAGService:
         )
 
         # After rewriting → try retrieve again
-        workflow.add_edge("rewrite_query", "retrieve")
+        workflow.add_edge("rewrite_query", "graph_citation_retrieve")
 
         # After answer generation → done
         workflow.add_edge("generate_answer", END)
