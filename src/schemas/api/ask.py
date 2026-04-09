@@ -62,13 +62,21 @@ class AgenticAskResponse(AskResponse):
         None,
         description="If the agent rewrote the query before retrieval",
     )
-    neo4j_attempted: bool = Field(
+    graph_retrieval_attempted: bool = Field(
         False,
-        description="Whether the agent actually queried Neo4j for graph facts during this request",
+        description="Whether the agent attempted graph-first retrieval via Neo4j during this request",
     )
-    used_neo4j: bool = Field(
+    graph_retrieval_used: bool = Field(
         False,
-        description="Whether Neo4j graph facts were attached to at least one retrieved document",
+        description="Whether graph-first retrieval via Neo4j supplied the documents used downstream",
+    )
+    neo4j_enrichment_attempted: bool = Field(
+        False,
+        description="Whether the agent queried Neo4j to enrich retrieved papers with graph facts",
+    )
+    neo4j_enrichment_used: bool = Field(
+        False,
+        description="Whether Neo4j enrichment attached graph facts to at least one retrieved document",
     )
     graph_enriched_docs: int = Field(
         0,
@@ -96,8 +104,10 @@ class AgenticAskResponse(AskResponse):
                 "trace_id": "abc123-def456-ghi789",
                 "thread_id": "550e8400-e29b-41d4-a716-446655440000",
                 "rewritten_query": None,
-                "neo4j_attempted": True,
-                "used_neo4j": True,
+                "graph_retrieval_attempted": True,
+                "graph_retrieval_used": False,
+                "neo4j_enrichment_attempted": True,
+                "neo4j_enrichment_used": True,
                 "graph_enriched_docs": 1,
                 "graph_enriched_arxiv_ids": ["1706.03762"],
             }

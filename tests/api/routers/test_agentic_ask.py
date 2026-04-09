@@ -30,8 +30,10 @@ def mock_agentic_rag_service():
         ],
         "retrieval_attempts": 1,
         "rewritten_query": None,
-        "neo4j_attempted": False,
-        "used_neo4j": False,
+        "graph_retrieval_attempted": False,
+        "graph_retrieval_used": False,
+        "neo4j_enrichment_attempted": False,
+        "neo4j_enrichment_used": False,
         "graph_enriched_docs": 0,
         "graph_enriched_arxiv_ids": [],
     })
@@ -133,8 +135,10 @@ class TestAgenticAskEndpoint:
         assert len(data["reasoning_steps"]) > 0
         assert data["retrieval_attempts"] == 1
         assert data.get("thread_id")
-        assert data["neo4j_attempted"] is False
-        assert data["used_neo4j"] is False
+        assert data["graph_retrieval_attempted"] is False
+        assert data["graph_retrieval_used"] is False
+        assert data["neo4j_enrichment_attempted"] is False
+        assert data["neo4j_enrichment_used"] is False
 
     def test_ask_agentic_minimal_request(self, client, mock_agentic_rag_service):
         """Test agentic RAG with minimal required fields."""
@@ -257,8 +261,10 @@ class TestAgenticAskEndpoint:
             "reasoning_steps": ["Retrieved papers", "Enriched with graph facts", "Generated answer"],
             "retrieval_attempts": 1,
             "rewritten_query": None,
-            "neo4j_attempted": True,
-            "used_neo4j": True,
+            "graph_retrieval_attempted": False,
+            "graph_retrieval_used": False,
+            "neo4j_enrichment_attempted": True,
+            "neo4j_enrichment_used": True,
             "graph_enriched_docs": 1,
             "graph_enriched_arxiv_ids": ["1706.03762"],
         })
@@ -270,8 +276,10 @@ class TestAgenticAskEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["neo4j_attempted"] is True
-        assert data["used_neo4j"] is True
+        assert data["graph_retrieval_attempted"] is False
+        assert data["graph_retrieval_used"] is False
+        assert data["neo4j_enrichment_attempted"] is True
+        assert data["neo4j_enrichment_used"] is True
         assert data["graph_enriched_docs"] == 1
         assert data["graph_enriched_arxiv_ids"] == ["1706.03762"]
 
