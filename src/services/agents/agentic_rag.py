@@ -27,14 +27,14 @@ from .context import Context
 from .nodes import (
     ainvoke_generate_answer_step,
     ainvoke_grade_documents_step,
-    ainvoke_graph_citation_retrieve_step,
+    ainvoke_graph_retrieve_step,
     ainvoke_guardrail_step,
     ainvoke_out_of_scope_step,
     ainvoke_retrieve_step,
     ainvoke_rewrite_query_step,
     continue_after_guardrail,
     ainvoke_should_retrieve_step,
-    route_after_graph_citation_retrieve,
+    route_after_graph_retrieve,
     route_after_should_retrieve,
     ainvoke_rerank_documents_step
 )
@@ -271,7 +271,7 @@ class AgenticRAGService:
             return {
                 "relevant_sources": [paper_a, paper_b],
                 "retrieved_docs": shared_docs,
-                "neo4j_attempted": True,
+                "graph_retrieval_attempted": True,
                 "graph_enriched_arxiv_ids": [paper_a["arxiv_id"], paper_b["arxiv_id"]],
             }
 
@@ -297,7 +297,7 @@ class AgenticRAGService:
                 return docs, [], False
 
             enriched_ids: List[str] = []
-            neo4j_attempted = True
+            enrichment_attempted = True
 
             try:
                 logger.info(
@@ -344,7 +344,7 @@ class AgenticRAGService:
             except Exception as e:
                 logger.warning("Neo4j enrichment failed; continuing without graph facts: %s", e)
 
-            return docs, enriched_ids, neo4j_attempted
+            return docs, enriched_ids, enrichment_attempted
 
         # Create tools (these still need to be created upfront for ToolNode)
         async def tool_node(state: dict, runtime: Runtime[Context]):
@@ -353,7 +353,9 @@ class AgenticRAGService:
             relevant_sources = []
             observations = []
             enriched_ids: List[str] = []
-            neo4j_attempted = False
+            graph_retrieval_attempted = False
+            graph_retrieval_used = False
+            neo4j_enrichment_attempted = False
             for call in tool_calls:
                 tool = runtime.context.tools_by_name[call["name"]]
                 if tool.name=="retrieve_papers":
@@ -366,13 +368,14 @@ class AgenticRAGService:
                     if shared_citation_result is not None:
                         observations = shared_citation_result["retrieved_docs"]
                         relevant_sources = shared_citation_result["relevant_sources"]
-                        neo4j_attempted = shared_citation_result.get("neo4j_attempted", False)
+                        graph_retrieval_attempted = shared_citation_result.get("graph_retrieval_attempted", False)
+                        graph_retrieval_used = True
                         enriched_ids = shared_citation_result.get("graph_enriched_arxiv_ids", [])
                     else:
                         observations = await tool.ainvoke(call["args"])
                         observations = observations[0]['text']
                         observations = json.loads(observations)
-                        observations, enriched_ids, neo4j_attempted = _enrich_with_neo4j(
+                        observations, enriched_ids, neo4j_enrichment_attempted = _enrich_with_neo4j(
                             observations,
                             runtime.context.neo4j_client,
                         )
@@ -394,8 +397,10 @@ class AgenticRAGService:
                 "relevant_sources": relevant_sources,
                 "retrieved_docs": observations,
                 "metadata": {
-                    "neo4j_attempted": neo4j_attempted,
-                    "used_neo4j": bool(enriched_ids),
+                    "graph_retrieval_attempted": graph_retrieval_attempted,
+                    "graph_retrieval_used": graph_retrieval_used,
+                    "neo4j_enrichment_attempted": neo4j_enrichment_attempted,
+                    "neo4j_enrichment_used": bool(enriched_ids) and not graph_retrieval_used,
                     "graph_enriched_docs": len(enriched_ids),
                     "graph_enriched_arxiv_ids": enriched_ids,
                 },
@@ -405,7 +410,7 @@ class AgenticRAGService:
         logger.info("Adding nodes to workflow graph")
         workflow.add_node("guardrail", ainvoke_guardrail_step)
         workflow.add_node("out_of_scope", ainvoke_out_of_scope_step)
-        workflow.add_node("graph_citation_retrieve", ainvoke_graph_citation_retrieve_step)
+        workflow.add_node("graph_retrieve", ainvoke_graph_retrieve_step)
         workflow.add_node("retrieve", ainvoke_retrieve_step)
         workflow.add_node("tool_retrieve", tool_node)
         # workflow.add_node("tool_retrieve", ToolNode(tools))
@@ -435,15 +440,15 @@ class AgenticRAGService:
             route_after_should_retrieve,
             {
                 "generate_answer": "generate_answer",
-                "retrieve": "graph_citation_retrieve",
+                "retrieve": "graph_retrieve",
             },
         )
         # Out of scope → END
         workflow.add_edge("out_of_scope", END)
 
         workflow.add_conditional_edges(
-            "graph_citation_retrieve",
-            route_after_graph_citation_retrieve,
+            "graph_retrieve",
+            route_after_graph_retrieve,
             {
                 "rerank": "rerank",
                 "retrieve": "retrieve",
@@ -475,7 +480,7 @@ class AgenticRAGService:
         )
 
         # After rewriting → try retrieve again
-        workflow.add_edge("rewrite_query", "graph_citation_retrieve")
+        workflow.add_edge("rewrite_query", "graph_retrieve")
 
         # After answer generation → done
         workflow.add_edge("generate_answer", END)
@@ -711,8 +716,10 @@ class AgenticRAGService:
                 "execution_time": execution_time,
                 "guardrail_score": result.get("guardrail_result").score if result.get("guardrail_result") else None,
                 "trace_id": trace_id,
-                "neo4j_attempted": result.get("metadata", {}).get("neo4j_attempted", False),
-                "used_neo4j": result.get("metadata", {}).get("used_neo4j", False),
+                "graph_retrieval_attempted": result.get("metadata", {}).get("graph_retrieval_attempted", False),
+                "graph_retrieval_used": result.get("metadata", {}).get("graph_retrieval_used", False),
+                "neo4j_enrichment_attempted": result.get("metadata", {}).get("neo4j_enrichment_attempted", False),
+                "neo4j_enrichment_used": result.get("metadata", {}).get("neo4j_enrichment_used", False),
                 "graph_enriched_docs": result.get("metadata", {}).get("graph_enriched_docs", 0),
                 "graph_enriched_arxiv_ids": result.get("metadata", {}).get("graph_enriched_arxiv_ids", []),
                 # If no local sources were found, tell the caller we can run a web search

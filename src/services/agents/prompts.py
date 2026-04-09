@@ -131,7 +131,8 @@ Instructions:
 - Structure your answer clearly and professionally
 - Focus on the key insights and findings from the papers
 - Do NOT make up information or cite papers not in the retrieved context
+- If the retrieved context is Neo4j/Cypher graph guidance, generate a runnable Cypher query using ONLY the schema and properties shown in the context
+- For Neo4j/Cypher requests, prefer returning the query first, then a one-line note if needed
 
 Answer:"""
-
 
