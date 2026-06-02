@@ -36,6 +36,15 @@ async def ainvoke_rerank_documents_step(
             "routing_decision": "grade_documents" 
         }
 
+    if all(doc.metadata.get("search_mode") == "neo4j_graph" for doc in documents):
+        logger.info("Skipping rerank for graph-only Neo4j results")
+        state["messages"].append(ToolMessage(content=documents, tool_call_id="RerankSkipped"))
+        return {
+            "reranked_docs": documents,
+            "retrieved_docs": documents,
+            "rerank_scores": [doc.metadata.get("relevance_score", 0.0) for doc in documents],
+        }
+
     question = get_latest_query(state["messages"])
 
     try:
