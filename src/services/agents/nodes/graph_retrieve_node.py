@@ -316,6 +316,33 @@ def _lookup_paper_by_title(neo4j_client: Any, title: str) -> Optional[Dict[str, 
     return rows[0] if rows else None
 
 
+def _lookup_shared_citations_by_titles(
+    neo4j_client: Any,
+    title_a: str,
+    title_b: str,
+) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    paper_a = _lookup_paper_by_title(neo4j_client, title_a)
+    paper_b = _lookup_paper_by_title(neo4j_client, title_b)
+    if not paper_a or not paper_b:
+        return paper_a, paper_b, []
+
+    rows = neo4j_client.execute_read(
+        """
+        MATCH (a:Paper {arxiv_id: $arxiv_id_a}), (b:Paper {arxiv_id: $arxiv_id_b})
+        MATCH (a)-[:CITES|CITES_PAPER]->(r)<-[:CITES|CITES_PAPER]-(b)
+        RETURN DISTINCT r.title AS title,
+               r.arxiv_id AS arxiv_id,
+               labels(r) AS labels
+        LIMIT 200
+        """,
+        {
+            "arxiv_id_a": paper_a["arxiv_id"],
+            "arxiv_id_b": paper_b["arxiv_id"],
+        },
+    )
+    return paper_a, paper_b, rows
+
+
 def _build_paper_lookup_doc(question: str, paper: Dict[str, Any]) -> Dict[str, Any]:
     arxiv_id = paper.get("arxiv_id", "") or ""
     title = paper.get("title", "") or "Untitled paper"
@@ -343,6 +370,71 @@ def _build_paper_lookup_doc(question: str, paper: Dict[str, Any]) -> Dict[str, A
             "graph_query_generation": False,
         },
     }
+
+
+def _build_shared_citation_docs(
+    question: str,
+    paper_a: Dict[str, Any],
+    paper_b: Dict[str, Any],
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not rows:
+        return [
+            {
+                "page_content": (
+                    f"Question: {question}\n"
+                    f"No shared citations found between '{paper_a.get('title', 'Unknown paper')}' "
+                    f"and '{paper_b.get('title', 'Unknown paper')}'."
+                ),
+                "metadata": {
+                    "arxiv_id": "",
+                    "title": "No shared citations found",
+                    "authors": [],
+                    "score": 0.0,
+                    "source": "",
+                    "section": "neo4j_shared_citations",
+                    "search_mode": "neo4j_graph",
+                    "top_k": 0,
+                    "graph_query_generation": False,
+                    "source_papers": [
+                        paper_a.get("arxiv_id", ""),
+                        paper_b.get("arxiv_id", ""),
+                    ],
+                },
+            }
+        ]
+
+    docs: List[Dict[str, Any]] = []
+    for row in rows:
+        cited_title = row.get("title") or "Untitled reference"
+        cited_arxiv_id = row.get("arxiv_id") or ""
+        docs.append(
+            {
+                "page_content": (
+                    f"Question: {question}\n"
+                    f"Shared citation cited by both '{paper_a.get('title', 'Unknown paper')}' and "
+                    f"'{paper_b.get('title', 'Unknown paper')}': {cited_title}"
+                    + (f" (arXiv:{cited_arxiv_id})" if cited_arxiv_id else "")
+                ),
+                "metadata": {
+                    "arxiv_id": cited_arxiv_id,
+                    "title": cited_title,
+                    "authors": [],
+                    "score": 1.0,
+                    "source": _build_pdf_url(cited_arxiv_id),
+                    "section": "neo4j_shared_citations",
+                    "search_mode": "neo4j_graph",
+                    "top_k": len(rows),
+                    "graph_query_generation": False,
+                    "source_papers": [
+                        paper_a.get("arxiv_id", ""),
+                        paper_b.get("arxiv_id", ""),
+                    ],
+                    "labels": row.get("labels", []),
+                },
+            }
+        )
+    return docs
 
 
 def _build_not_found_doc(question: str, arxiv_id: str) -> Dict[str, Any]:
@@ -523,6 +615,70 @@ async def ainvoke_graph_retrieve_step(
             },
         }
 
+    if intent.query_kind == "shared_citations" and len(intent.paper_titles) >= 2:
+        paper_a, paper_b, rows = _lookup_shared_citations_by_titles(
+            neo4j_client,
+            intent.paper_titles[0],
+            intent.paper_titles[1],
+        )
+        if paper_a and paper_b:
+            docs = _build_shared_citation_docs(query, paper_a, paper_b, rows)
+            return {
+                "retrieved_docs": docs,
+                "relevant_sources": [
+                    {
+                        "arxiv_id": paper_a.get("arxiv_id", ""),
+                        "title": paper_a.get("title", ""),
+                        "authors": [],
+                        "url": paper_a.get("pdf_url") or _build_pdf_url(paper_a.get("arxiv_id")),
+                        "relevance_score": 1.0,
+                    },
+                    {
+                        "arxiv_id": paper_b.get("arxiv_id", ""),
+                        "title": paper_b.get("title", ""),
+                        "authors": [],
+                        "url": paper_b.get("pdf_url") or _build_pdf_url(paper_b.get("arxiv_id")),
+                        "relevance_score": 1.0,
+                    },
+                ],
+                "metadata": {
+                    "graph_query_applicable": True,
+                    "graph_query_reason": intent.reasoning,
+                    "graph_retrieval_attempted": True,
+                    "graph_retrieval_used": True,
+                    "graph_enriched_docs": len(docs),
+                    "graph_enriched_arxiv_ids": [
+                        paper_a.get("arxiv_id", ""),
+                        paper_b.get("arxiv_id", ""),
+                    ],
+                    "graph_query_titles": intent.paper_titles,
+                    "graph_query_type": intent.query_kind,
+                    "graph_query_rows": len(rows),
+                    "graph_query_satisfied": True,
+                    "graph_query_generation": False,
+                },
+            }
+
+        missing_title = intent.paper_titles[0] if not paper_a else intent.paper_titles[1]
+        doc = _build_title_not_found_doc(query, missing_title)
+        return {
+            "retrieved_docs": [doc],
+            "relevant_sources": [],
+            "metadata": {
+                "graph_query_applicable": True,
+                "graph_query_reason": "paper_title_not_found",
+                "graph_retrieval_attempted": True,
+                "graph_retrieval_used": True,
+                "graph_enriched_docs": 1,
+                "graph_enriched_arxiv_ids": [],
+                "graph_query_titles": intent.paper_titles,
+                "graph_query_type": intent.query_kind,
+                "graph_query_rows": 0,
+                "graph_query_satisfied": False,
+                "graph_query_generation": False,
+            },
+        }
+
     guidance_doc = _build_graph_guidance_doc(query, intent)
     relevant_sources = [
         {
@@ -559,6 +715,9 @@ def route_after_graph_retrieve(state: AgentState) -> str:
 
     metadata = state.get("metadata", {}) or {}
     if metadata.get("graph_query_applicable"):
+        if metadata.get("graph_retrieval_used") and not metadata.get("graph_query_generation", False):
+            logger.info("Graph retrieve returned factual Neo4j results -> skip rerank, go to grade_documents")
+            return "grade_documents"
         logger.info("Graph retrieve applicable -> rerank graph guidance")
         return "rerank"
 

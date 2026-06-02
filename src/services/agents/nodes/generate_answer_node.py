@@ -17,6 +17,25 @@ from .utils import get_latest_context, get_latest_query, get_old_message
 logger = logging.getLogger(__name__)
 
 
+def _build_context_from_retrieved_docs(state: AgentState) -> str:
+    docs = state.get("retrieved_docs", []) or []
+    parts = []
+    for doc in docs:
+        if isinstance(doc, dict):
+            text = (
+                doc.get("page_content")
+                or doc.get("text")
+                or doc.get("chunk_text")
+                or doc.get("content")
+                or ""
+            )
+        else:
+            text = getattr(doc, "page_content", "") or str(doc)
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
 async def ainvoke_generate_answer_step(
     state: AgentState,
     runtime: Runtime[Context],
@@ -36,6 +55,8 @@ async def ainvoke_generate_answer_step(
     # Get question and context
     question = get_latest_query(state["messages"])
     context = get_latest_context(state["messages"])
+    if not context:
+        context = _build_context_from_retrieved_docs(state)
 
     # Count sources from relevant_sources
     sources_count = len(state.get("relevant_sources", []))

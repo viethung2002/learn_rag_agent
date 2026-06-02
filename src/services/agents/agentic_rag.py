@@ -451,6 +451,7 @@ class AgenticRAGService:
             route_after_graph_retrieve,
             {
                 "rerank": "rerank",
+                "grade_documents": "grade_documents",
                 "retrieve": "retrieve",
             },
         )
