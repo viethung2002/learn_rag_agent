@@ -5,9 +5,10 @@ from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from src.dependencies import CacheDep, EmbeddingsDep, LangfuseDep, OllamaDep, OpenSearchDep
+from src.dependencies import CacheDep, EmbeddingsDep, EvaluationDep, LangfuseDep, OllamaDep, OpenSearchDep, Neo4jDep
 from src.schemas.api.ask import AskRequest, AskResponse
 from src.services.langfuse.tracer import RAGTracer
+from src.services.neo4j import queries as neo4j_queries
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ async def _prepare_chunks_and_sources(
     opensearch_client,
     embeddings_service,
     rag_tracer: RAGTracer,
+    neo4j_client=None,
     trace=None,
 ) -> tuple[List[Dict], List[str], List[str]]:
     """Retrieve and prepare chunks for RAG with clean tracing."""
@@ -69,6 +71,22 @@ async def _prepare_chunks_and_sources(
                 arxiv_ids.append(arxiv_id)
                 arxiv_id_clean = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
                 sources_set.add(f"https://arxiv.org/pdf/{arxiv_id_clean}.pdf")
+        # If Neo4j client provided, try to fetch graph facts and attach to chunks.
+        if neo4j_client and arxiv_ids:
+            try:
+                query = neo4j_queries.build_papers_relations_query()
+                rows = neo4j_client.execute_read(query, {"ids": arxiv_ids})
+                facts_map = {}
+                for r in rows:
+                    simplified = neo4j_queries.simplify_relations_row(r)
+                    facts_map[simplified.get("arxiv_id")] = simplified.get("relations", [])
+
+                for c in chunks:
+                    aid = c.get("arxiv_id")
+                    if aid and aid in facts_map and facts_map[aid]:
+                        c["graph_facts"] = facts_map[aid]
+            except Exception as e:
+                logger.warning(f"Neo4j query failed; continuing without graph facts: {e}")
 
         # End search span with essential metadata
         rag_tracer.end_search(search_span, chunks, arxiv_ids, search_results.get("total", 0))
@@ -83,7 +101,9 @@ async def ask_question(
     embeddings_service: EmbeddingsDep,
     ollama_client: OllamaDep,
     langfuse_tracer: LangfuseDep,
+    neo4j_client: Neo4jDep,
     cache_client: CacheDep,
+    evaluation_service: EvaluationDep,
 ) -> AskResponse:
     """Clean RAG endpoint with essential tracing and exact match caching."""
 
@@ -108,7 +128,7 @@ async def ask_question(
 
             # Retrieve chunks
             chunks, sources, _ = await _prepare_chunks_and_sources(
-                request, opensearch_client, embeddings_service, rag_tracer, trace
+                request, opensearch_client, embeddings_service, rag_tracer, neo4j_client, trace
             )
 
             if not chunks:
@@ -143,12 +163,26 @@ async def ask_question(
                 rag_tracer.end_generation(gen_span, answer, request.model)
 
             # Prepare response
+            evaluation = None
+            if evaluation_service:
+                evaluation = await evaluation_service.evaluate_answer(
+                    query=request.query,
+                    answer=answer,
+                    contexts=[chunk.get("chunk_text", "") for chunk in chunks],
+                    metadata={
+                        "endpoint": "ask",
+                        "model": request.model,
+                        "search_mode": "hybrid" if request.use_hybrid else "bm25",
+                    },
+                )
+
             response = AskResponse(
                 query=request.query,
                 answer=answer,
                 sources=sources,
                 chunks_used=len(chunks),
                 search_mode="bm25" if not request.use_hybrid else "hybrid",
+                evaluation=evaluation,
             )
 
             rag_tracer.end_request(trace, answer, time.time() - start_time)
@@ -174,6 +208,7 @@ async def ask_question_stream(
     embeddings_service: EmbeddingsDep,
     ollama_client: OllamaDep,
     langfuse_tracer: LangfuseDep,
+    neo4j_client: Neo4jDep,
     cache_client: CacheDep,
 ) -> StreamingResponse:
     """Clean streaming RAG endpoint."""
@@ -211,7 +246,7 @@ async def ask_question_stream(
 
                 # Retrieve chunks
                 chunks, sources, _ = await _prepare_chunks_and_sources(
-                    request, opensearch_client, embeddings_service, rag_tracer, trace
+                    request, opensearch_client, embeddings_service, rag_tracer, neo4j_client, trace
                 )
 
                 if not chunks:

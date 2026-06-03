@@ -12,11 +12,13 @@ class PaperRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def create(self, paper: PaperCreate) -> Paper:
+    def create(self, paper: PaperCreate, *, commit: bool = True) -> Paper:
         db_paper = Paper(**paper.model_dump())
         self.session.add(db_paper)
-        self.session.commit()
+        self.session.flush()
         self.session.refresh(db_paper)
+        if commit:
+            self.session.commit()
         return db_paper
 
     def get_by_arxiv_id(self, arxiv_id: str) -> Optional[Paper]:
@@ -76,20 +78,22 @@ class PaperRepository:
             "text_extraction_rate": (papers_with_text / processed_papers * 100) if processed_papers > 0 else 0,
         }
 
-    def update(self, paper: Paper) -> Paper:
+    def update(self, paper: Paper, *, commit: bool = True) -> Paper:
         self.session.add(paper)
-        self.session.commit()
+        self.session.flush()
         self.session.refresh(paper)
+        if commit:
+            self.session.commit()
         return paper
 
-    def upsert(self, paper_create: PaperCreate) -> Paper:
+    def upsert(self, paper_create: PaperCreate, *, commit: bool = True) -> Paper:
         # Check if paper already exists
         existing_paper = self.get_by_arxiv_id(paper_create.arxiv_id)
         if existing_paper:
             # Update existing paper with new content
             for key, value in paper_create.model_dump(exclude_unset=True).items():
                 setattr(existing_paper, key, value)
-            return self.update(existing_paper)
+            return self.update(existing_paper, commit=commit)
         else:
             # Create new paper
-            return self.create(paper_create)
+            return self.create(paper_create, commit=commit)

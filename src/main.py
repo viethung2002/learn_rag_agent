@@ -1,26 +1,49 @@
 import logging
 import os
+from pathlib import Path
+from click import command
+import sentry_sdk
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from starlette.middleware.cors import CORSMiddleware
+
+from src.api.main import api_router
+from src.core.config import settings
+
 from src.config import get_settings
 from src.db.factory import make_database
 from src.routers import agentic_ask, hybrid_search, ping
 from src.routers.ask import ask_router, stream_router
 from src.routers.ask_gemini import ask_gemini,stream_gemini
 from src.routers.ask_nvidia import ask_nvidia,stream_nvidia
+from src.routers import agentic_ask, hybrid_search, ping, upload
 
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
 from src.services.embeddings.factory import make_embeddings_service
+from src.services.evaluation.factory import make_evaluation_service
 from src.services.langfuse.factory import make_langfuse_tracer
 from src.services.ollama.factory import make_ollama_client
 from src.services.gemini.factory import make_gemini_client
 from src.services.nvidia.factory import make_nvidia_client
 from src.services.opensearch.factory import make_opensearch_client
+from src.services.neo4j.factory import make_neo4j_client, make_neo4j_driver
+
 from src.services.pdf_parser.factory import make_pdf_parser_service
 from src.services.telegram.factory import make_telegram_service
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+
+from src.services.agents.checkpoint_utils import (
+    ensure_checkpoint_database_exists,
+    mask_conninfo_for_log,
+    to_psycopg_conninfo,
+)
 from src.services.agents.factory import make_agentic_rag_service
 
 
@@ -31,17 +54,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
+def custom_generate_unique_id(route: APIRoute) -> str:
+    return f"{route.tags[0]}-{route.name}"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Lifespan for the API.
     """
     logger.info("Starting RAG API...")
+    try:
+        alembic_cfg = uvicorn.Config(str(Path(__file__).resolve().parent / "alembic.ini"))
+        command.upgrade(alembic_cfg, "head")
+        from sqlmodel import Session
+        from src.core.db import engine, init_db
+        with Session(engine) as session:
+            init_db(session)
+        logger.info("Database migrations and initial user ready")
+    except Exception as e:
+        logger.warning("DB migration/init non-fatal: %s", e)
 
     settings = get_settings()
     app.state.settings = settings
-
+   
     database = make_database()
     app.state.database = database
     logger.info("Database connected")
@@ -50,9 +84,18 @@ async def lifespan(app: FastAPI):
     opensearch_client = make_opensearch_client()
     app.state.opensearch_client = opensearch_client
 
+    neo4j_client = make_neo4j_client(settings)
+    app.state.neo4j_client = neo4j_client
+    try:
+        neo4j_client.verify_connectivity()
+        logger.info("Neo4j connected successfully")
+    except Exception as e:
+        logger.warning("Neo4j connectivity check failed - graph features may be limited: %s", e)
+
     # Verify OpenSearch connectivity and create index if needed
     if opensearch_client.health_check():
         logger.info("OpenSearch connected successfully")
+        
 
         # Setup hybrid index (supports all search types)
         setup_results = opensearch_client.setup_indices(force=False)
@@ -79,6 +122,11 @@ async def lifespan(app: FastAPI):
     app.state.nvidia_client = make_nvidia_client()
     app.state.langfuse_tracer = make_langfuse_tracer()
     app.state.cache_client = make_cache_client(settings)
+    app.state.evaluation_service = make_evaluation_service(
+        settings=settings,
+        nvidia_client=app.state.nvidia_client,
+        langfuse_tracer=app.state.langfuse_tracer,
+    )
     logger.info("Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, Ollama, Langfuse, Cache")
 
     # Initialize Telegram bot (Week 7)
@@ -100,15 +148,33 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Telegram bot not configured - skipping initialization")
     
-    # Initialize Agentic
+    # LangGraph checkpoints → PostgreSQL (DB langgraph_checkpoint, bảng tạo bởi AsyncPostgresSaver.setup)
+    checkpoint_conninfo = to_psycopg_conninfo(settings.langgraph_checkpoint_database_url)
+    logger.info(
+        "LangGraph checkpoint DB: %s",
+        mask_conninfo_for_log(checkpoint_conninfo),
+    )
+    await ensure_checkpoint_database_exists(checkpoint_conninfo)
+    langgraph_checkpoint_pool = AsyncConnectionPool(
+        conninfo=checkpoint_conninfo,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=False,
+        min_size=1,
+        max_size=10,
+        name="langgraph-checkpoint",
+    )
+    await langgraph_checkpoint_pool.open()
+    langgraph_checkpointer = AsyncPostgresSaver(conn=langgraph_checkpoint_pool)
+    await langgraph_checkpointer.setup()
+    app.state.langgraph_checkpoint_pool = langgraph_checkpoint_pool
+
     app.state.agentic_rag = make_agentic_rag_service(
         opensearch_client=app.state.opensearch_client,
-        # ollama_client=ollama,
+        neo4j_client=app.state.neo4j_client,
         nvidia_client=app.state.nvidia_client,
         embeddings_client=app.state.embeddings_service,
         langfuse_tracer=app.state.langfuse_tracer,
-        # model=settings.ollama_model,
-        # model=settings.nvidia_model,
+        checkpointer=langgraph_checkpointer,
     )
 
     logger.info("API ready")
@@ -119,17 +185,40 @@ async def lifespan(app: FastAPI):
         await app.state.telegram_service.stop()
         logger.info("Telegram bot stopped")
 
+    if getattr(app.state, "neo4j_client", None) is not None:
+        try:
+            app.state.neo4j_client.close()
+            logger.info("Neo4j client closed")
+        except Exception as e:
+            logger.warning("Error closing Neo4j client: %s", e)
+        make_neo4j_driver.cache_clear()
+
+    checkpoint_pool = getattr(app.state, "langgraph_checkpoint_pool", None)
+    if checkpoint_pool is not None:
+        await checkpoint_pool.close()
+        logger.info("LangGraph checkpoint pool closed")
+
     database.teardown()
     logger.info("API shutdown complete")
 
-
+if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
+    sentry_sdk.init(dsn=str(settings.SENTRY_DSN), enable_tracing=True)
 app = FastAPI(
     title="arXiv Paper Curator API",
     description="Personal arXiv CS.AI paper curator with RAG capabilities",
     version=os.getenv("APP_VERSION", "0.1.0"),
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",\
+    generate_unique_id_function=custom_generate_unique_id,
     lifespan=lifespan,
 )
-
+if settings.all_cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.all_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 # Include routers
 app.include_router(ping.router, prefix="/api/v1")  # Health check endpoint
 app.include_router(hybrid_search.router, prefix="/api/v1")  # Search chunks with BM25/hybrid
@@ -139,8 +228,10 @@ app.include_router(ask_gemini, prefix="/api/v1")  # RAG question answering with 
 app.include_router(stream_gemini, prefix="/api/v1")  # Streaming RAG
 app.include_router(ask_nvidia, prefix="/api/v1")  # RAG question answering with Nvidia LLM
 app.include_router(stream_nvidia, prefix="/api/v1")  # Streaming RAG
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 app.include_router(agentic_ask.router)  # Agentic RAG with intelligent retrieval
+app.include_router(upload.router, prefix="/api/v1")  # Paper upload endpoint
 
 
 if __name__ == "__main__":

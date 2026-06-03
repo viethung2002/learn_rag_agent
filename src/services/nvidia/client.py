@@ -6,7 +6,7 @@ from src.config import Settings
 from src.exceptions import NvidiaConnectionError, NvidiaException, NvidiaTimeoutError
 from src.services.ollama.prompts import RAGPromptBuilder, ResponseParser
 
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIARerank
 from langchain_core.messages import HumanMessage,AIMessage
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,17 @@ class NvidiaClient:
             max_tokens=2048
         )
         return client
+    def get_reranker(self, model: str = "nvidia/llama-3.2-nv-rerankqa-1b-v2", top_n: int = 8):
+        """
+        Trả về NVIDIARerank instance thay vì ChatNVIDIA
+        """
+        reranker = NVIDIARerank(
+            nvidia_api_key=self.api_key,
+            model=model,
+            top_n=top_n
+        )
+        logger.info(f"Reranker initialized with model: {model}, top_n: {top_n}")
+        return reranker
     
     async def health_check(self):
             try:

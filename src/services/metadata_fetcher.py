@@ -14,7 +14,7 @@ from src.schemas.pdf_parser.models import ArxivMetadata, ParsedPaper, PdfContent
 from src.services.arxiv.client import ArxivClient
 from src.services.opensearch.client import OpenSearchClient
 from src.services.pdf_parser.parser import PDFParserService
-
+from src.services.neo4j.ingestion import PaperGraphIngestion
 logger = logging.getLogger(__name__)
 
 
@@ -25,16 +25,17 @@ class MetadataFetcher:
         self,
         arxiv_client: ArxivClient,
         pdf_parser: PDFParserService,
+        neo4j_ingestion: PaperGraphIngestion,
         pdf_cache_dir: Optional[Path] = None,
         max_concurrent_downloads: int = 5,
-        max_concurrent_parsing: int = 3,
+        max_concurrent_parsing: int = 1,
         settings: Optional[Settings] = None,
     ):
         """Initialize metadata fetcher with services and settings.
 
         :param arxiv_client: Client for arXiv API operations
         :param pdf_parser: Service for parsing PDF documents
-        :param opensearch_client: Optional OpenSearch client for indexing
+        :param neo4j_ingestion: Service for ingesting papers into Neo4j
         :param pdf_cache_dir: Directory for caching downloaded PDFs
         :param max_concurrent_downloads: Maximum concurrent PDF downloads
         :param max_concurrent_parsing: Maximum concurrent PDF parsing operations
@@ -55,6 +56,8 @@ class MetadataFetcher:
         self.max_concurrent_downloads = max_concurrent_downloads
         self.max_concurrent_parsing = max_concurrent_parsing
         self.settings = settings or get_settings()
+        self.neo4j_ingestion = neo4j_ingestion
+
 
     async def fetch_and_process_papers(
         self,
@@ -64,6 +67,7 @@ class MetadataFetcher:
         process_pdfs: bool = True,
         store_to_db: bool = True,
         db_session: Optional[Session] = None,
+        sync_to_neo4j: bool = True,
     ) -> Dict[str, Any]:
         """Fetch papers from arXiv, process PDFs, and store to database.
 
@@ -91,6 +95,7 @@ class MetadataFetcher:
             "papers_indexed": 0,
             "errors": [],
             "processing_time": 0,
+            "papers_synced_neo4j": 0,
         }
 
         start_time = datetime.now()
@@ -120,6 +125,18 @@ class MetadataFetcher:
                 logger.info("Step 3: Storing papers to database...")
                 stored_count = self._store_papers_to_db(papers, pdf_results.get("parsed_papers", {}), db_session)
                 results["papers_stored"] = stored_count
+                
+                if sync_to_neo4j and hasattr(self, "neo4j_ingestion") and self.neo4j_ingestion:
+                    from src.models.paper import Paper
+                    arxiv_ids = [p.arxiv_id for p in papers]
+
+                    db_session.expire_all()
+
+                    db_papers = db_session.query(Paper).filter(Paper.arxiv_id.in_(arxiv_ids)).all()
+
+                    neo_stats = self.neo4j_ingestion.ingest_papers(db_papers)
+                    results["papers_synced_neo4j"] = neo_stats["ingested"]
+                    logger.info(f"Neo4j graph sync: {neo_stats['ingested']}/{neo_stats['total']} papers")
             elif store_to_db:
                 logger.warning("Database storage requested but no session provided")
                 results["errors"].append("Database session not provided for storage")
@@ -291,40 +308,36 @@ class MetadataFetcher:
                     logger.warning(f"PDF parsing failed for {paper.arxiv_id}, continuing with metadata only")
 
         except Exception as e:
-            logger.error(f"Pipeline error for {paper.arxiv_id}: {e}")
+            logger.error(f"Pipeline error for {paper.arxiv_id}: {e}", exc_info=True)
             raise MetadataFetchingException(f"Pipeline error for {paper.arxiv_id}: {e}") from e
 
         return (download_success, parsed_paper)
 
     def _serialize_parsed_content(self, parsed_paper: ParsedPaper) -> Dict[str, Any]:
-        """Serialize ParsedPaper content for database storage.
+            """Serialize ParsedPaper content for database storage."""
+            try:
+                pdf_content = parsed_paper.pdf_content
 
-        :param parsed_paper: ParsedPaper object with PDF content
-        :type parsed_paper: ParsedPaper
-        :returns: Dictionary with serialized content for database storage
-        :rtype: Dict[str, Any]
-        """
-        try:
-            pdf_content = parsed_paper.pdf_content
+                # Serialize sections
+                sections = [{"title": section.title, "content": section.content} for section in pdf_content.sections]
 
-            # Serialize sections
-            sections = [{"title": section.title, "content": section.content} for section in pdf_content.sections]
+                # --- SỬA DÒNG DƯỚI ĐÂY ---
+                # Bọc chuỗi string thành Dictionary để khớp với Schema của DB
+                references = [{"raw_text": ref} for ref in pdf_content.references]
+                # -------------------------
 
-            # Serialize references
-            references = list(pdf_content.references)  #
-
-            return {
-                "raw_text": pdf_content.raw_text,
-                "sections": sections,
-                "references": references,
-                "parser_used": pdf_content.parser_used.value if pdf_content.parser_used else None,
-                "parser_metadata": pdf_content.metadata or {},
-                "pdf_processed": True,
-                "pdf_processing_date": datetime.now(),
-            }
-        except Exception as e:
-            logger.error(f"Failed to serialize parsed content: {e}")
-            return {"pdf_processed": False, "parser_metadata": {"error": str(e)}}
+                return {
+                    "raw_text": pdf_content.raw_text,
+                    "sections": sections,
+                    "references": references,
+                    "parser_used": pdf_content.parser_used.value if pdf_content.parser_used else None,
+                    "parser_metadata": pdf_content.metadata or {},
+                    "pdf_processed": True,
+                    "pdf_processing_date": datetime.now(),
+                }
+            except Exception as e:
+                logger.error(f"Failed to serialize parsed content: {e}")
+                return {"pdf_processed": False, "parser_metadata": {"error": str(e)}}
 
     def _store_papers_to_db(
         self,
@@ -407,6 +420,7 @@ def make_metadata_fetcher(
     pdf_parser: PDFParserService,
     pdf_cache_dir: Optional[Path] = None,
     settings: Optional[Settings] = None,
+    neo4j_ingestion: Optional[PaperGraphIngestion] = None,
 ) -> MetadataFetcher:
     """Create MetadataFetcher instance with configuration settings.
 
@@ -414,21 +428,28 @@ def make_metadata_fetcher(
     :param pdf_parser: Service for parsing PDF documents
     :param pdf_cache_dir: Directory for caching downloaded PDFs
     :param settings: Application settings instance (uses default if None)
+    :param neo4j_ingestion: Graph sync service; if omitted, one is built from settings
     :type arxiv_client: ArxivClient
     :type pdf_parser: PDFParserService
     :type pdf_cache_dir: Optional[Path]
     :type settings: Optional[Settings]
+    :type neo4j_ingestion: Optional[PaperGraphIngestion]
     :returns: Configured MetadataFetcher instance
     :rtype: MetadataFetcher
     """
     from src.config import get_settings
+    from src.services.neo4j.factory import make_neo4j_client
 
     if settings is None:
         settings = get_settings()
 
+    if neo4j_ingestion is None:
+        neo4j_ingestion = PaperGraphIngestion(make_neo4j_client(settings))
+
     return MetadataFetcher(
         arxiv_client=arxiv_client,
         pdf_parser=pdf_parser,
+        neo4j_ingestion=neo4j_ingestion,
         pdf_cache_dir=pdf_cache_dir,
         max_concurrent_downloads=settings.arxiv.max_concurrent_downloads,
         max_concurrent_parsing=settings.arxiv.max_concurrent_parsing,

@@ -1,4 +1,30 @@
 services:
+  neo4j:
+      image: neo4j:latest
+      container_name: rag-neo4j
+      environment:
+        - NEO4J_AUTH=neo4j/12345678
+        # GIỚI HẠN RAM (Rất quan trọng để container không ăn hết bộ nhớ của hệ thống)
+        - NEO4J_dbms_memory_heap_initial__size=512m
+        - NEO4J_dbms_memory_heap_max__size=512m
+        - NEO4J_dbms_memory_pagecache_size=512m
+      ports:
+        - "7474:7474"
+        - "7687:7687"
+      volumes:
+        - neo4j_data:/data
+        - neo4j_logs:/logs
+        - neo4j_plugins:/plugins
+      healthcheck:
+        # Kiểm tra cổng HTTP của Neo4j để đảm bảo DB đã khởi động xong
+        test: ["CMD-SHELL", "wget -qO- http://neo4j:7474 || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+        start_period: 40s
+      restart: unless-stopped
+      networks:
+        - rag-network
   # API service
   api:
     build: .
@@ -22,15 +48,33 @@ services:
       - .env
     volumes:
       - ./src:/app/src
+      - ./data/user_uploads:/app/data/user_uploads
+      - ./data/eval:/app/data/eval
     environment:
       # Container-specific overrides
       - OPENSEARCH_HOST=http://opensearch:9200
       - OPENSEARCH__HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
+      - POSTGRES_SERVER=postgres
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
+      - LANGGRAPH_CHECKPOINT_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/langgraph_checkpoint
       - LANGFUSE_HOST=http://langfuse-web:3000 
       - LANGFUSE_DEBUG=true
       - REDIS__HOST=redis
+    networks:
+      - rag-network
+
+  fast-mcp-server:
+    build:
+      context: ./src/mcp
+      dockerfile: Dockerfile
+    container_name: fast-mcp-server
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/mcp/src
+    ports:
+      - "8100:8100"
     networks:
       - rag-network
 
@@ -115,16 +159,19 @@ services:
       - AIRFLOW_HOME=/opt/airflow
       - PYTHONPATH=/opt/airflow/src
       # Container hostnames for Airflow
+      - POSTGRES_SERVER=postgres
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
       - OPENSEARCH_HOST=http://opensearch:9200
       - OPENSEARCH__HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
       - REDIS__HOST=redis
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - airflow_logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
       - ./src:/opt/airflow/src
+      - ./data/user_uploads:/opt/airflow/user_uploads
     ports:
       - "8080:8080"
     # Command handled by entrypoint.sh
@@ -137,21 +184,21 @@ services:
     networks:
       - rag-network
 
-  ollama:
-    image: ollama/ollama:0.11.2
-    container_name: rag-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    networks:
-      - rag-network
+  # ollama:
+  #   image: ollama/ollama:0.11.2
+  #   container_name: rag-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   healthcheck:
+  #     test: ["CMD", "ollama", "list"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
+  #   networks:
+  #     - rag-network
 
   postgres:
     image: postgres:16-alpine
@@ -166,6 +213,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db/01-init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_db"]
       interval: 5s
@@ -381,7 +429,13 @@ volumes:
   redis_data:
   langfuse_v3_postgres_data:
   langfuse_v3_minio_data:
-
+  neo4j_data:
+  neo4j_logs:
+  neo4j_plugins:
 networks:
   rag-network:
     driver: bridge 
+
+
+
+

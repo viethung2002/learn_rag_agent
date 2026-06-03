@@ -3,7 +3,6 @@ import time
 from typing import Dict
 
 from langgraph.runtime import Runtime
-from langchain_core.documents import Document
 
 from ..context import Context
 from ..models import GradeDocuments, GradingResult
@@ -12,6 +11,25 @@ from ..state import AgentState
 from .utils import get_latest_context, get_latest_query
 
 logger = logging.getLogger(__name__)
+
+
+def _build_context_from_retrieved_docs(state: AgentState) -> str:
+    docs = state.get("retrieved_docs", []) or []
+    parts = []
+    for doc in docs:
+        if isinstance(doc, dict):
+            text = (
+                doc.get("page_content")
+                or doc.get("text")
+                or doc.get("chunk_text")
+                or doc.get("content")
+                or ""
+            )
+        else:
+            text = getattr(doc, "page_content", "") or str(doc)
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
 
 
 async def ainvoke_grade_documents_step(
@@ -34,6 +52,8 @@ async def ainvoke_grade_documents_step(
     # Get query and context
     question = get_latest_query(state["messages"])
     context = get_latest_context(state["messages"])
+    if not context:
+        context = _build_context_from_retrieved_docs(state)
 
 
     # Extract document chunks from context for logging

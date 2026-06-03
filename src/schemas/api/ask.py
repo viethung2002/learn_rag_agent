@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,7 @@ class AskResponse(BaseModel):
     sources: List[str] = Field(..., description="PDF URLs of source papers")
     chunks_used: int = Field(..., description="Number of chunks used for generation")
     search_mode: str = Field(..., description="Search mode used: bm25 or hybrid")
+    evaluation: Optional["EvaluationSummary"] = Field(None, description="Optional automated evaluation scores")
 
     class Config:
         json_schema_extra = {
@@ -53,6 +54,38 @@ class AgenticAskResponse(AskResponse):
     reasoning_steps: List[str] = Field(..., description="Agent's decision-making steps")
     retrieval_attempts: int = Field(..., description="Number of document retrieval attempts")
     trace_id: Optional[str] = Field(None, description="Langfuse trace ID for feedback and debugging")
+    thread_id: Optional[str] = Field(
+        None,
+        description="Conversation thread id (persisted history); send on the next turn to continue",
+    )
+    rewritten_query: Optional[str] = Field(
+        None,
+        description="If the agent rewrote the query before retrieval",
+    )
+    graph_retrieval_attempted: bool = Field(
+        False,
+        description="Whether the agent attempted graph-first retrieval via Neo4j during this request",
+    )
+    graph_retrieval_used: bool = Field(
+        False,
+        description="Whether graph-first retrieval via Neo4j supplied the documents used downstream",
+    )
+    neo4j_enrichment_attempted: bool = Field(
+        False,
+        description="Whether the agent queried Neo4j to enrich retrieved papers with graph facts",
+    )
+    neo4j_enrichment_used: bool = Field(
+        False,
+        description="Whether Neo4j enrichment attached graph facts to at least one retrieved document",
+    )
+    graph_enriched_docs: int = Field(
+        0,
+        description="Number of retrieved documents enriched with Neo4j graph facts",
+    )
+    graph_enriched_arxiv_ids: List[str] = Field(
+        default_factory=list,
+        description="arXiv IDs of retrieved documents that were enriched from Neo4j",
+    )
 
     class Config:
         json_schema_extra = {
@@ -69,6 +102,14 @@ class AgenticAskResponse(AskResponse):
                 ],
                 "retrieval_attempts": 1,
                 "trace_id": "abc123-def456-ghi789",
+                "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+                "rewritten_query": None,
+                "graph_retrieval_attempted": True,
+                "graph_retrieval_used": False,
+                "neo4j_enrichment_attempted": True,
+                "neo4j_enrichment_used": True,
+                "graph_enriched_docs": 1,
+                "graph_enriched_arxiv_ids": ["1706.03762"],
             }
         }
 
@@ -103,3 +144,37 @@ class FeedbackResponse(BaseModel):
                 "message": "Feedback recorded successfully",
             }
         }
+
+
+class LLMJudgeResult(BaseModel):
+    score: float = Field(..., description="Judge score normalized to 0-1", ge=0, le=1)
+    verdict: str = Field(..., description="Short verdict from the judge")
+    reasoning: Optional[str] = Field(None, description="Judge explanation")
+
+
+class EvaluationSummary(BaseModel):
+    ragas_metrics: Dict[str, float] = Field(default_factory=dict, description="RAGAS metric scores by name")
+    llm_judge: Optional[LLMJudgeResult] = Field(None, description="LLM-as-judge result")
+    reference_used: bool = Field(False, description="Whether a reference answer was used")
+    status: str = Field("completed", description="Evaluation execution status")
+
+
+AskResponse.model_rebuild()
+AgenticAskResponse.model_rebuild()
+
+
+class WebSearchConsentRequest(BaseModel):
+    """Request to run web search after user consent."""
+
+    thread_id: Optional[str] = Field(None, description="Conversation thread id")
+    query: str = Field(..., description="Original user query", min_length=1, max_length=1000)
+    consent: bool = Field(..., description="User consent to run web search")
+
+
+class WebSearchConsentResponse(BaseModel):
+    success: bool = Field(..., description="Whether the web search was executed")
+    summary: Optional[str] = Field(None, description="Web search summary if executed")
+    message: Optional[str] = Field(None, description="Info message")
+
+
+WebSearchConsentResponse.model_rebuild()

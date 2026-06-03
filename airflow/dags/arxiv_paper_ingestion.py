@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
-from arxiv_ingestion.fetching import fetch_daily_papers
+from arxiv_ingestion.fetching import fetch_daily_papers, resolve_citations, sync_daily_to_neo4j
 from arxiv_ingestion.indexing import index_papers_hybrid, verify_hybrid_index
 from arxiv_ingestion.reporting import generate_daily_report
 
@@ -46,6 +46,18 @@ fetch_task = PythonOperator(
     dag=dag,
 )
 
+sync_neo4j_task = PythonOperator(
+    task_id="sync_to_neo4j",
+    python_callable=sync_daily_to_neo4j,
+    dag=dag,
+)
+
+link_citations_task = PythonOperator(
+    task_id="resolve_internal_citations",
+    python_callable=resolve_citations,
+    dag=dag,
+)
+    
 # Hybrid search indexing task (replaces old OpenSearch task)
 index_hybrid_task = PythonOperator(
     task_id="index_papers_hybrid",
@@ -70,6 +82,5 @@ cleanup_task = BashOperator(
     dag=dag,
 )
 
-# Task dependencies
-# Simplified pipeline: setup -> fetch -> hybrid index -> report -> cleanup
-setup_task >> fetch_task >> index_hybrid_task >> report_task >> cleanup_task
+# Task dependencies: fetch -> Postgres; sync_to_neo4j -> graph; resolve -> CITES_PAPER links
+setup_task >> fetch_task >> sync_neo4j_task >> link_citations_task >> index_hybrid_task >> report_task >> cleanup_task

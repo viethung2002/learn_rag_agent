@@ -81,6 +81,21 @@ class ChunkingSettings(BaseConfigSettings):
     min_chunk_size: int = 100  # Minimum words for a valid chunk
     section_based: bool = True  # Use section-based chunking when available
 
+class Neo4jSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="NEO4J__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    uri: str = "bolt://localhost:7687"
+    user: str = "neo4j"
+    password: str = ""
+    database: str | None = None  # Neo4j 4+: None = default DB
+    max_connection_lifetime: int = 3600  # seconds
+    connection_timeout: float = 30.0
 
 class OpenSearchSettings(BaseConfigSettings):
     model_config = SettingsConfigDict(
@@ -91,7 +106,7 @@ class OpenSearchSettings(BaseConfigSettings):
         case_sensitive=False,
     )
 
-    host: str = "http://localhost:9200"
+    host: str = "http://rag-opensearch:9200"
     index_name: str = "arxiv-papers"
     chunk_index_suffix: str = "chunks"  # Creates single hybrid index: {index_name}-{suffix}
     max_text_size: int = 1000000
@@ -159,6 +174,38 @@ class TelegramSettings(BaseConfigSettings):
     enabled: bool = False
 
 
+class AirflowSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="AIRFLOW__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    webserver_url: str = "http://rag-airflow:8080"
+    username: str = "admin"
+    password: str = "admin"
+
+
+class EvaluationSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="EVALUATION__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    enabled: bool = False
+    run_ragas: bool = True
+    run_llm_judge: bool = True
+    judge_provider: Literal["ollama", "nvidia"] = "ollama"
+    judge_model: str = "llama3.2:1b"
+    require_reference: bool = False
+    max_contexts: int = 5
+
+
 class Settings(BaseConfigSettings):
     app_version: str = "0.1.0"
     debug: bool = True
@@ -169,6 +216,11 @@ class Settings(BaseConfigSettings):
     postgres_echo_sql: bool = False
     postgres_pool_size: int = 20
     postgres_max_overflow: int = 0
+
+    # LangGraph AsyncPostgresSaver (psycopg3). Dùng DB riêng; tạo bởi init-db/01-init-dbs.sh
+    langgraph_checkpoint_database_url: str = (
+        "postgresql://rag_user:rag_password@localhost:5432/langgraph_checkpoint"
+    )
 
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.2:1b"
@@ -190,15 +242,39 @@ class Settings(BaseConfigSettings):
     pdf_parser: PDFParserSettings = Field(default_factory=PDFParserSettings)
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)
+    neo4j: Neo4jSettings = Field(default_factory=Neo4jSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
+    airflow: AirflowSettings = Field(default_factory=AirflowSettings)
+    evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
 
     @field_validator("postgres_database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
-        if not (v.startswith("postgresql://") or v.startswith("postgresql+psycopg2://")):
-            raise ValueError("Database URL must start with 'postgresql://' or 'postgresql+psycopg2://'")
+        if not (
+            v.startswith("postgresql://")
+            or v.startswith("postgresql+psycopg2://")
+            or v.startswith("postgresql+psycopg://")
+        ):
+            raise ValueError(
+                "Database URL must start with 'postgresql://', "
+                "'postgresql+psycopg2://', or 'postgresql+psycopg://'"
+            )
+        return v
+
+    @field_validator("langgraph_checkpoint_database_url")
+    @classmethod
+    def validate_langgraph_checkpoint_url(cls, v: str) -> str:
+        if not (
+            v.startswith("postgresql://")
+            or v.startswith("postgresql+psycopg2://")
+            or v.startswith("postgresql+psycopg://")
+        ):
+            raise ValueError(
+                "LangGraph checkpoint URL must start with 'postgresql://', "
+                "'postgresql+psycopg2://', or 'postgresql+psycopg://'"
+            )
         return v
 
 

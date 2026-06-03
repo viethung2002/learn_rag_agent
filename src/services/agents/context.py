@@ -1,11 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from langfuse._client.span import LangfuseSpan
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional,Dict, Any
 
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 # from src.services.ollama.client import OllamaClient
 from src.services.nvidia.client import NvidiaClient
+from src.services.neo4j.client import Neo4jClient
 from src.services.opensearch.client import OpenSearchClient
 
 
@@ -31,6 +32,7 @@ class Context:
     # ollama_client: OllamaClient
     nvidia_client: NvidiaClient
     opensearch_client: OpenSearchClient
+    neo4j_client: Optional[Neo4jClient]
     embeddings_client: JinaEmbeddingsClient
     langfuse_tracer: Optional[LangfuseTracer]
     trace: Optional["LangfuseSpan"] = None
@@ -40,3 +42,4 @@ class Context:
     top_k: int = 3
     max_retrieval_attempts: int = 2
     guardrail_threshold: int = 60
+    tools_by_name: Optional[Dict[str, Any]] = field(default=None)

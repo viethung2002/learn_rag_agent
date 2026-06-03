@@ -1,10 +1,18 @@
+import uuid
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, Mock
+from sqlmodel import Session, SQLModel, create_engine
+from sqlalchemy.pool import StaticPool
 
-from src.main import app
 from src.services.agents.agentic_rag import AgenticRAGService
 from src import dependencies
+from src.api import deps as api_deps
+from src.models.agent_chat.schema import AgentChatConversation, AgentChatMessage
+from src.models.user.schema import User
+from src.routers import agentic_ask
 
 
 @pytest.fixture
@@ -22,23 +30,75 @@ def mock_agentic_rag_service():
         ],
         "retrieval_attempts": 1,
         "rewritten_query": None,
+        "graph_retrieval_attempted": False,
+        "graph_retrieval_used": False,
+        "neo4j_enrichment_attempted": False,
+        "neo4j_enrichment_used": False,
+        "graph_enriched_docs": 0,
+        "graph_enriched_arxiv_ids": [],
     })
     return service
 
 
 @pytest.fixture
 def client(mock_agentic_rag_service):
-    """FastAPI test client with mocked dependencies."""
-    # Override the dependency to return our mock service
+    """FastAPI test client with mocked dependencies (minimal app, no full lifespan)."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[
+            User.__table__,
+            AgentChatConversation.__table__,
+            AgentChatMessage.__table__,
+        ],
+    )
+    test_user_id = uuid.uuid4()
+    with Session(engine) as session:
+        session.add(
+            User(
+                id=test_user_id,
+                email="agentic-test@example.com",
+                hashed_password="x",
+                is_active=True,
+                is_superuser=False,
+            )
+        )
+        session.commit()
+
+    def override_get_db():
+        with Session(engine) as session:
+            yield session
+
+    def override_get_current_user():
+        return User(
+            id=test_user_id,
+            email="agentic-test@example.com",
+            hashed_password="x",
+            is_active=True,
+            is_superuser=False,
+        )
+
     def override_get_agentic_rag_service():
         return mock_agentic_rag_service
 
-    app.dependency_overrides[dependencies.get_agentic_rag_service] = override_get_agentic_rag_service
+    mini = FastAPI()
+    mini.include_router(agentic_ask.router)
+    mini.state.agentic_rag = mock_agentic_rag_service
+    mini.state.cache_client = None
 
-    yield TestClient(app)
+    mini.dependency_overrides[api_deps.get_db] = override_get_db
+    mini.dependency_overrides[api_deps.get_current_user] = override_get_current_user
+    mini.dependency_overrides[dependencies.get_agentic_rag_service] = (
+        override_get_agentic_rag_service
+    )
 
-    # Clean up after test
-    app.dependency_overrides.clear()
+    yield TestClient(mini)
+
+    mini.dependency_overrides.clear()
 
 
 class TestAgenticAskEndpoint:
@@ -74,6 +134,11 @@ class TestAgenticAskEndpoint:
         assert len(data["sources"]) > 0
         assert len(data["reasoning_steps"]) > 0
         assert data["retrieval_attempts"] == 1
+        assert data.get("thread_id")
+        assert data["graph_retrieval_attempted"] is False
+        assert data["graph_retrieval_used"] is False
+        assert data["neo4j_enrichment_attempted"] is False
+        assert data["neo4j_enrichment_used"] is False
 
     def test_ask_agentic_minimal_request(self, client, mock_agentic_rag_service):
         """Test agentic RAG with minimal required fields."""
@@ -187,6 +252,37 @@ class TestAgenticAskEndpoint:
         assert data["rewritten_query"] == "What are the key concepts in machine learning?"
         assert data["retrieval_attempts"] == 2
 
+    def test_ask_agentic_exposes_neo4j_status_flags(self, client, mock_agentic_rag_service):
+        """Test Neo4j status flags distinguish attempted vs enriched."""
+        mock_agentic_rag_service.ask = AsyncMock(return_value={
+            "query": "What graph facts support transformers?",
+            "answer": "Transformers connect attention mechanisms to sequence modeling papers.",
+            "sources": ["https://arxiv.org/pdf/1706.03762.pdf"],
+            "reasoning_steps": ["Retrieved papers", "Enriched with graph facts", "Generated answer"],
+            "retrieval_attempts": 1,
+            "rewritten_query": None,
+            "graph_retrieval_attempted": False,
+            "graph_retrieval_used": False,
+            "neo4j_enrichment_attempted": True,
+            "neo4j_enrichment_used": True,
+            "graph_enriched_docs": 1,
+            "graph_enriched_arxiv_ids": ["1706.03762"],
+        })
+
+        response = client.post(
+            "/api/v1/ask-agentic",
+            json={"query": "What graph facts support transformers?"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["graph_retrieval_attempted"] is False
+        assert data["graph_retrieval_used"] is False
+        assert data["neo4j_enrichment_attempted"] is True
+        assert data["neo4j_enrichment_used"] is True
+        assert data["graph_enriched_docs"] == 1
+        assert data["graph_enriched_arxiv_ids"] == ["1706.03762"]
+
     def test_ask_agentic_custom_model(self, client, mock_agentic_rag_service):
         """Test agentic RAG with custom model parameter."""
         response = client.post(
@@ -230,3 +326,35 @@ class TestAgenticAskEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["search_mode"] == "bm25"
+
+    def test_get_conversation_messages_after_ask(self, client, mock_agentic_rag_service):
+        """Persisted history: POST ask then GET messages for thread_id."""
+        r1 = client.post(
+            "/api/v1/ask-agentic",
+            json={"query": "hello", "model": "deepseek-ai/deepseek-v3.2"},
+        )
+        assert r1.status_code == 200
+        tid = r1.json()["thread_id"]
+        r2 = client.get(f"/api/v1/agentic/conversations/{tid}/messages")
+        assert r2.status_code == 200
+        payload = r2.json()
+        assert payload["thread_id"] == tid
+        assert len(payload["messages"]) == 2
+        assert payload["messages"][0]["role"] == "user"
+        assert payload["messages"][0]["content"] == "hello"
+        assert payload["messages"][1]["role"] == "assistant"
+
+    def test_list_conversations_after_ask(self, client, mock_agentic_rag_service):
+        """Persisted history: POST ask then GET conversations."""
+        r1 = client.post(
+            "/api/v1/ask-agentic",
+            json={"query": "list my threads", "model": "deepseek-ai/deepseek-v3.2"},
+        )
+        assert r1.status_code == 200
+        tid = r1.json()["thread_id"]
+
+        r2 = client.get("/api/v1/agentic/conversations")
+        assert r2.status_code == 200
+        payload = r2.json()
+        assert payload["total"] >= 1
+        assert any(row["thread_id"] == tid for row in payload["data"])

@@ -13,7 +13,7 @@ Also provide brief reasoning for your decision.
 Respond in JSON format with 'binary_score' (yes/no) and 'reasoning' fields."""
 
 SHOULD_RETRIEVE_PROMPT=""""You are an assistant specializing in AI/ML/CS research.
-Decide whether you need to search research papers in the database to answer the question.
+Based on the current question and conversation history, decide if you need to search research papers in the database to answer the question.
 
 Answer "yes" (should_retrieve: true) if:
 - The question is new or has not been asked before (you can not old message for reference)
@@ -131,7 +131,8 @@ Instructions:
 - Structure your answer clearly and professionally
 - Focus on the key insights and findings from the papers
 - Do NOT make up information or cite papers not in the retrieved context
+- If the retrieved context is Neo4j/Cypher graph guidance, generate a runnable Cypher query using ONLY the schema and properties shown in the context
+- For Neo4j/Cypher requests, prefer returning the query first, then a one-line note if needed
 
 Answer:"""
-
 
