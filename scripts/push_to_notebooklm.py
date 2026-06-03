@@ -1,210 +1,110 @@
 #!/usr/bin/env python3
-"""Bundle project source (no vendored libs) and upload to NotebookLM via notebooklm-cli."""
+"""Sync NotebookLM from latest GitHub (push local branch first, then one URL source)."""
 
 from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 from nlm.core.client import NotebookLMClient
 
 ROOT = Path(__file__).resolve().parents[1]
-
-# Paths / names to skip (libraries, caches, secrets, binaries)
-SKIP_DIR_NAMES = {
-    ".venv",
-    "venv",
-    "env",
-    "node_modules",
-    "__pycache__",
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    "htmlcov",
-    "dist",
-    "build",
-    "wheels",
-    "eggs",
-    ".eggs",
-    "lib",
-    "lib64",
-    "opensearch_data",
-    "ollama_data",
-    "data",
-    "airflow/logs",
-    "airflow/plugins",
-}
-
-SKIP_FILE_NAMES = {
-    "uv.lock",
-    "poetry.lock",
-    "Pipfile.lock",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-}
-
-SKIP_SUFFIXES = {
-    ".pyc",
-    ".pyo",
-    ".so",
-    ".dll",
-    ".exe",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".ico",
-    ".webp",
-    ".pdf",
-    ".zip",
-    ".tar",
-    ".gz",
-    ".whl",
-    ".egg",
-    ".db",
-    ".sqlite3",
-}
-
-TEXT_SUFFIXES = {
-    ".py",
-    ".md",
-    ".txt",
-    ".yml",
-    ".yaml",
-    ".json",
-    ".toml",
-    ".ini",
-    ".cfg",
-    ".sh",
-    ".sql",
-    ".ipynb",
-    ".html",
-    ".css",
-    ".js",
-    ".ts",
-    ".tsx",
-    ".jsx",
-    ".env.example",
-    ".env.test",
-    ".dockerignore",
-    ".gitignore",
-    "Dockerfile",
-    "Makefile",
-    "compose.yml",
-    "pyproject.toml",
-    "README.md",
-    "LICENSE",
-}
-
-MAX_CHUNK_CHARS = 350_000
+DEFAULT_NOTEBOOK_ID = "a7210c1b-5e45-4471-931a-398f9b44607f"
+DEFAULT_REMOTE = "origin"
+DEFAULT_BRANCH = "hai-dev"
+DEFAULT_REPO_URL = "https://github.com/viethung2002/learn_rag_agent"
 
 
-def should_skip(path: Path) -> bool:
-    rel = path.relative_to(ROOT).as_posix()
-    parts = rel.split("/")
-    for i in range(len(parts)):
-        segment = "/".join(parts[: i + 1])
-        if segment in SKIP_DIR_NAMES or parts[i] in SKIP_DIR_NAMES:
-            return True
-    if path.name in SKIP_FILE_NAMES:
-        return True
-    if path.name.startswith(".env") and path.name not in {".env.example", ".env.test"}:
-        return True
-    suffix = path.suffix.lower()
-    if suffix in SKIP_SUFFIXES:
-        return True
-    if path.is_file() and suffix not in TEXT_SUFFIXES and path.name not in TEXT_SUFFIXES:
-        return True
-    return False
+def git(*args: str) -> str:
+    return subprocess.check_output(["git", "-C", str(ROOT), *args], text=True).strip()
 
 
-def collect_files() -> list[Path]:
-    files: list[Path] = []
-    try:
-        import subprocess as sp
-
-        listed = sp.check_output(
-            ["git", "-C", str(ROOT), "ls-files", "-z"],
-            text=False,
-        ).split(b"\0")
-        candidates = [ROOT / p.decode("utf-8") for p in listed if p]
-    except (FileNotFoundError, sp.CalledProcessError):
-        candidates = [p for p in ROOT.rglob("*") if p.is_file()]
-
-    for path in sorted(candidates):
-        if not path.is_file():
-            continue
-        if should_skip(path):
-            continue
-        files.append(path)
-    return files
+def github_source_url(branch: str) -> str:
+    return f"{DEFAULT_REPO_URL}/tree/{branch}"
 
 
-def file_block(path: Path) -> str:
-    rel = path.relative_to(ROOT).as_posix()
-    try:
-        content = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return ""
-    return f"\n\n{'=' * 72}\nFILE: {rel}\n{'=' * 72}\n\n{content}"
+def push_to_github(remote: str, branch: str, skip_push: bool) -> None:
+    status = git("status", "--porcelain")
+    if status:
+        print("Uncommitted changes detected — commit them before push.")
+        print(status)
+        raise SystemExit(1)
 
-
-def build_chunks(files: list[Path]) -> list[tuple[str, str]]:
-    header = (
-        f"# arxiv-paper-curator source bundle\n"
-        f"Root: {ROOT}\n"
-        f"Files: {len(files)}\n"
-    )
-    chunks: list[tuple[str, str]] = []
-    current_title = "arxiv-paper-curator (part 1)"
-    current = header
-    part = 1
-
-    for path in files:
-        block = file_block(path)
-        if not block:
-            continue
-        if len(current) + len(block) > MAX_CHUNK_CHARS and len(current) > len(header):
-            chunks.append((current_title, current))
-            part += 1
-            current_title = f"arxiv-paper-curator (part {part})"
-            current = f"# Continued — part {part}\n\n"
-        current += block
-
-    if current.strip():
-        chunks.append((current_title, current))
-    return chunks
-
-
-def upload_chunks(notebook_id: str, chunks: list[tuple[str, str]], dry_run: bool) -> None:
-    if dry_run:
+    ahead = git("rev-list", "--count", f"{remote}/{branch}..HEAD")
+    if ahead == "0":
+        print(f"Branch {branch} is already up to date with {remote}/{branch}.")
+        if skip_push:
+            return
+    if skip_push:
+        print(f"Warning: {ahead} commit(s) not pushed; GitHub may be stale.")
         return
+
+    print(f"Pushing {branch} to {remote}...")
+    subprocess.check_call(["git", "-C", str(ROOT), "push", remote, branch])
+    print("Push done.")
+
+
+def list_sources(client: NotebookLMClient, notebook_id: str) -> list[dict]:
+    sources = client.list_sources(notebook_id)
+    return sources if isinstance(sources, list) else []
+
+
+def sync_notebook(
+    notebook_id: str,
+    branch: str,
+    replace_all: bool,
+    dry_run: bool,
+) -> None:
+    url = github_source_url(branch)
+    if dry_run:
+        print(f"Would set sole source: {url}")
+        return
+
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     with NotebookLMClient() as client:
-        for title, text in chunks:
-            print(f"Uploading {title!r} ({len(text):,} chars)...", flush=True)
-            client.add_source_text(notebook_id, text, title=title)
-            print("  done")
+        existing = list_sources(client, notebook_id)
+        for src in existing:
+            sid = src.get("id") or src.get("source_id")
+            title = src.get("title", sid)
+            if not sid:
+                continue
+            if replace_all:
+                print(f"Deleting: {title}")
+                client.delete_source(sid)
+            else:
+                src_url = (src.get("url") or "").rstrip("/")
+                if src_url.rstrip("/") == url.rstrip("/"):
+                    print("GitHub source already present; nothing to do.")
+                    return
+
+        print(f"Adding GitHub source: {url}")
+        client.add_source_url(notebook_id, url)
+        print("Done.")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--notebook-id",
-        default="a7210c1b-5e45-4471-931a-398f9b44607f",
-        help="NotebookLM notebook ID",
+    parser = argparse.ArgumentParser(
+        description="Push branch to GitHub and sync NotebookLM with one GitHub URL source.",
     )
+    parser.add_argument("--notebook-id", default=DEFAULT_NOTEBOOK_ID)
+    parser.add_argument("--remote", default=DEFAULT_REMOTE)
+    parser.add_argument("--branch", default=None, help=f"Default: current branch or {DEFAULT_BRANCH}")
+    parser.add_argument("--skip-push", action="store_true", help="Only sync NotebookLM, do not git push")
+    parser.add_argument("--no-replace", action="store_true", help="Do not delete existing sources")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    files = collect_files()
-    print(f"Collected {len(files)} files (libraries/caches excluded).")
-    chunks = build_chunks(files)
-    print(f"Split into {len(chunks)} text source(s).")
-    upload_chunks(args.notebook_id, chunks, args.dry_run)
+    branch = args.branch or git("branch", "--show-current") or DEFAULT_BRANCH
+    push_to_github(args.remote, branch, args.skip_push)
+    sync_notebook(
+        args.notebook_id,
+        branch,
+        replace_all=not args.no_replace,
+        dry_run=args.dry_run,
+    )
 
 
 if __name__ == "__main__":
