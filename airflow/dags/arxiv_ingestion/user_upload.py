@@ -18,12 +18,81 @@ def _raw_text_lines(pdf_content) -> list[str]:
     return [line.strip() for line in pdf_content.raw_text.split("\n") if line.strip()]
 
 
+def _looks_like_author_or_affiliation(line: str) -> bool:
+    lower = line.lower()
+    noisy_markers = (
+        "@",
+        "{",
+        "}",
+        "university",
+        "department",
+        "school",
+        "institute",
+        "laboratory",
+        "college",
+        "faculty",
+        "corresponding author",
+    )
+    if any(marker in lower for marker in noisy_markers):
+        return True
+
+    # Common author/affiliation patterns: superscript-like numbers, many commas, emails.
+    if re.search(r"\b\d+(?:,\d+)+\b", line):
+        return True
+    if re.search(r"\b(?:et al\.?)\b", lower):
+        return True
+
+    # Author blocks frequently have high comma/digit density (names + affiliation markers).
+    comma_count = line.count(",")
+    digit_count = sum(1 for ch in line if ch.isdigit())
+    token_count = len(line.split()) or 1
+    if comma_count >= 4:
+        return True
+    if digit_count >= 6:
+        return True
+    if (comma_count / token_count) > 0.22:
+        return True
+    if (digit_count / max(1, len(line))) > 0.10:
+        return True
+
+    # Patterns like "Name 1,2 , Name 2 , Name 3"
+    if re.search(r"[A-Za-z]\s+\d+(?:,\d+)+(?:\s*,\s*[A-Za-z]|\s*$)", line):
+        return True
+    return False
+
+
+def _looks_like_title_candidate(line: str) -> bool:
+    if not line:
+        return False
+    if "arxiv:" in line.lower():
+        return False
+    if _looks_like_author_or_affiliation(line):
+        return False
+
+    # Keep short titles like "Network In Network" while filtering obvious noise.
+    if len(line) < 5 or len(line) > 220:
+        return False
+    if line.count(" ") < 1:
+        return False
+
+    # Reject lines that are mostly numeric or punctuation-heavy.
+    alpha_chars = sum(1 for ch in line if ch.isalpha())
+    if alpha_chars < max(4, int(len(line) * 0.35)):
+        return False
+    return True
+
+
 def _first_substantial_title_line(lines: list[str], *, max_scan: int = 15) -> str | None:
-    """Skip arXiv header lines; prefer the first long line that looks like a paper title."""
+    """Skip headers/noise and return the first line that looks like a paper title."""
+    for line in lines[:max_scan]:
+        if _looks_like_title_candidate(line):
+            return line
+
+    # Fallback: older behavior for atypical PDFs that only expose long single-line titles.
     for line in lines[:max_scan]:
         if "arxiv:" in line.lower():
             continue
-        if len(line) > 30:
+        if len(line) > 30 and not _looks_like_author_or_affiliation(line):
             return line
     return None
 
@@ -38,11 +107,86 @@ def _title_line_index(lines: list[str], title: str) -> int | None:
             return i
     # Title may differ slightly from raw line; align to first substantial non-arXiv line
     for i, line in enumerate(lines[:15]):
-        if "arxiv:" in line.lower():
-            continue
-        if len(line) > 30:
+        if _looks_like_title_candidate(line):
             return i
     return None
+
+
+def _collect_author_block(lines: list[str], title_idx: int, *, max_scan_after_title: int = 10) -> str:
+    """Collect text between title and abstract heading."""
+    parts: list[str] = []
+    start = title_idx + 1
+    end = min(len(lines), start + max_scan_after_title)
+
+    for i in range(start, end):
+        line = lines[i].strip()
+        if not line:
+            continue
+        if re.match(r"^\s*abstract\b", line, flags=re.IGNORECASE):
+            break
+        parts.append(line)
+    return " ".join(parts).strip()
+
+
+def _clean_author_block(author_block: str) -> str:
+    """Remove affiliations/emails/noise and keep the leading author segment."""
+    if not author_block:
+        return ""
+
+    text = re.sub(r"\{[^}]*\}", " ", author_block)  # remove "{...}" email group
+    text = re.sub(r"\b[\w\.-]+@[\w\.-]+\.\w+\b", " ", text)  # remove emails
+
+    cut_markers = [
+        "graduate school",
+        "department",
+        "university",
+        "institute",
+        "laboratory",
+        "college",
+        "faculty",
+        "school of",
+    ]
+    lower = text.lower()
+    cut_idx = len(text)
+    for marker in cut_markers:
+        idx = lower.find(marker)
+        if idx != -1:
+            cut_idx = min(cut_idx, idx)
+    text = text[:cut_idx]
+
+    # Normalize spaces and separators around affiliation superscripts
+    text = re.sub(r"\s+", " ", text).strip(" ,;")
+    return text
+
+
+def _extract_authors_from_block(author_block: str) -> list[str]:
+    if not author_block:
+        return []
+
+    # Split by comma first, then clean each chunk.
+    chunks = [c.strip() for c in re.split(r"\s*,\s*", author_block) if c.strip()]
+    authors: list[str] = []
+
+    for chunk in chunks:
+        # Remove trailing affiliation markers like "1,2" / "2"
+        candidate = re.sub(r"\s+\d+(?:,\d+)*\s*$", "", chunk).strip()
+        # Also remove isolated leading/trailing symbols
+        candidate = re.sub(r"^[^\w]+|[^\w]+$", "", candidate).strip()
+        # Keep only name-like strings
+        if re.match(r"^[A-Za-z][A-Za-z\.\-'\s]{1,80}$", candidate):
+            if len(candidate.split()) >= 2:
+                authors.append(candidate)
+
+    # Fallback split by "and"/"&" if comma split did not work
+    if not authors:
+        alt = [c.strip() for c in re.split(r"\s+(?:and|&)\s+", author_block, flags=re.IGNORECASE) if c.strip()]
+        for chunk in alt:
+            candidate = re.sub(r"\s+\d+(?:,\d+)*\s*$", "", chunk).strip()
+            if re.match(r"^[A-Za-z][A-Za-z\.\-'\s]{1,80}$", candidate) and len(candidate.split()) >= 2:
+                authors.append(candidate)
+
+    # Deduplicate while preserving order
+    return list(dict.fromkeys(authors))
 
 
 def extract_metadata_from_pdf(pdf_content):
@@ -129,17 +273,15 @@ def extract_metadata_from_pdf(pdf_content):
                         abstract = abstract_text[:1500]
                         break
 
-    # 4) Authors: line immediately after title in raw text (split on comma, &, and)
+    # 4) Authors: parse block between title and Abstract, remove affiliations/emails
     if lines:
         idx = _title_line_index(lines, title)
-        if idx is not None and idx + 1 < len(lines):
-            author_line = lines[idx + 1]
-            if "arxiv:" not in author_line.lower() and len(author_line) < 400:
-                if "@" in author_line or "university" in author_line.lower():
-                    authors = ["Multiple Authors"]
-                else:
-                    author_list = re.split(r",|&|\s+and\s+", author_line, flags=re.IGNORECASE)
-                    authors = [a.strip() for a in author_list if len(a.strip()) > 2]
+        if idx is not None:
+            author_block = _collect_author_block(lines, idx)
+            cleaned_author_block = _clean_author_block(author_block)
+            parsed_authors = _extract_authors_from_block(cleaned_author_block)
+            if parsed_authors:
+                authors = parsed_authors
 
     if not categories:
         categories = ["cs.AI"]
@@ -317,7 +459,6 @@ async def _parse_extract_and_index(paper, arxiv_id, pdf_path, pdf_parser, opense
             neo4j_client = get_neo4j_service()
             graph_ingest = PaperGraphIngestion(neo4j_client)
             graph_ingest.ingest_paper(paper)
-            graph_ingest.resolve_internal_citations()
             logger.info(f"Đã đồng bộ bài báo {arxiv_id} lên Neo4j thành công.")
         except Exception as e:
             logger.error(f"Lỗi khi đẩy dữ liệu lên Neo4j: {e}", exc_info=True)
